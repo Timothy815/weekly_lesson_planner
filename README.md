@@ -1,6 +1,6 @@
 # Cybersecurity Weekly Lesson Planner
 
-An editable lesson planner for three daily 90-minute cybersecurity class slots. It includes the complete Monday–Friday routine, shortened-week controls, full-week and projection-friendly daily views, editable daily learning objectives, movable lesson cards, completion tracking, weekly planning notes, portable JSON backups, Markdown export, and printable daily or weekly records.
+An editable lesson planner for three daily 90-minute cybersecurity class slots. It includes the complete Monday–Friday routine, shortened-week controls, full-week and projection-friendly daily views, editable daily learning objectives, linked activity resources, movable lesson cards, completion tracking, selective day/week JSON imports, weekly planning notes, portable backups, Markdown export, and printable daily or weekly records.
 
 ## Daily view
 
@@ -16,6 +16,14 @@ The planner saves automatically in the browser. Each browser and computer has it
 - The PDF commands open the browser print window; choose **Save as PDF**.
 
 Clearing browser data can erase the local copy, so keep periodic JSON exports.
+
+## AI-assisted planning
+
+Open **More** and download either the AI day or AI week JSON template. Give the file to GPT, Claude, Gemini, or another AI and ask it to build the lesson while preserving the JSON structure and allowed category names. Import the completed file, review its contents, choose any combination of included days, select the destination class slot, and decide whether to apply its date and weekly brief.
+
+Full planner backups use the same review screen. You can copy selected days between slots or choose **Restore the complete backup** to replace the entire local planner.
+
+Activity cards can include multiple labeled links. Open a card, use **Add link**, and enter the resource label and web address. Links are included in planner backups and readable Markdown exports.
 
 ## Publish with GitHub Pages
 

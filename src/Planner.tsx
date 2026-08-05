@@ -5,7 +5,8 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "re
 type Day = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
 type Slot = "slot1" | "slot2" | "slot3";
 type Category = "Opening" | "Reading" | "Discussion" | "Instruction" | "Lab" | "Python" | "Reflection" | "Assessment";
-type Segment = { id: string; title: string; minutes: number; notes: string; category: Category; completed: boolean };
+type ResourceLink = { label: string; url: string };
+type Segment = { id: string; title: string; minutes: number; notes: string; category: Category; completed: boolean; resources: ResourceLink[] };
 type WeekMeta = {
   topic: string; centralQuestion: string; certificationObjectives: string; article: string;
   video: string; mentalModel: string; pythonConnection: string; primaryLab: string;
@@ -18,6 +19,16 @@ type Planner = {
   meta: WeekMeta;
   schedules: Record<Slot, Record<Day, Segment[]>>;
   dailyObjectives: Record<Slot, Record<Day, string>>;
+};
+type ImportCandidate = {
+  filename: string;
+  kind: "ai" | "backup";
+  weekOf?: string;
+  meta?: Partial<WeekMeta>;
+  sourceSlots: Slot[];
+  schedules: Partial<Record<Slot, Partial<Record<Day, Segment[]>>>>;
+  objectives: Partial<Record<Slot, Partial<Record<Day, string>>>>;
+  backup?: Planner;
 };
 
 const STORAGE_KEY = "cybersecurity-weekly-planner-v1";
@@ -98,7 +109,7 @@ function currentMonday() {
   return date.toISOString().slice(0, 10);
 }
 function freshSchedule(): Record<Day, Segment[]> {
-  return Object.fromEntries(days.map((day) => [day, routine[day].map(([title, minutes, notes, category]) => ({ id: uid(), title, minutes, notes, category, completed: false }))])) as Record<Day, Segment[]>;
+  return Object.fromEntries(days.map((day) => [day, routine[day].map(([title, minutes, notes, category]) => ({ id: uid(), title, minutes, notes, category, completed: false, resources: [] as ResourceLink[] }))])) as Record<Day, Segment[]>;
 }
 function freshObjectives(): Record<Day, string> {
   return Object.fromEntries(days.map((day) => [day, ""])) as Record<Day, string>;
@@ -114,7 +125,7 @@ function defaultPlanner(): Planner {
     dailyObjectives: { slot1: freshObjectives(), slot2: freshObjectives(), slot3: freshObjectives() },
   };
 }
-function isPlanner(value: unknown): value is Omit<Planner, "dailyObjectives"> & { dailyObjectives?: Planner["dailyObjectives"] } {
+function isPlanner(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<Planner>;
   return candidate.schemaVersion === 1
@@ -128,10 +139,82 @@ function isPlanner(value: unknown): value is Omit<Planner, "dailyObjectives"> & 
     && slots.every((slot) => days.every((day) => Array.isArray(candidate.schedules?.[slot]?.[day])))
     && (!candidate.dailyObjectives || slots.every((slot) => days.every((day) => typeof candidate.dailyObjectives?.[slot]?.[day] === "string")));
 }
-function normalizePlanner(value: ReturnType<typeof defaultPlanner> | (Omit<Planner, "dailyObjectives"> & { dailyObjectives?: Planner["dailyObjectives"] })): Planner {
+function normalizeResources(value: unknown): ResourceLink[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((resource) => {
+    if (!resource || typeof resource !== "object") return [];
+    const candidate = resource as Partial<ResourceLink>;
+    if (typeof candidate.url !== "string" || !candidate.url.trim()) return [];
+    return [{ label: typeof candidate.label === "string" && candidate.label.trim() ? candidate.label.trim() : "Open resource", url: candidate.url.trim() }];
+  });
+}
+function normalizeSegment(value: unknown): Segment {
+  const candidate = value && typeof value === "object" ? value as Partial<Segment> : {};
+  return {
+    id: typeof candidate.id === "string" ? candidate.id : uid(),
+    title: typeof candidate.title === "string" ? candidate.title : "Untitled activity",
+    minutes: typeof candidate.minutes === "number" && candidate.minutes > 0 ? candidate.minutes : 10,
+    notes: typeof candidate.notes === "string" ? candidate.notes : "",
+    category: categories.includes(candidate.category as Category) ? candidate.category as Category : "Instruction",
+    completed: candidate.completed === true,
+    resources: normalizeResources(candidate.resources),
+  };
+}
+function normalizePlanner(input: unknown): Planner {
+  const value = input as Omit<Planner, "dailyObjectives"> & { dailyObjectives?: Planner["dailyObjectives"] };
   return {
     ...value,
+    schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.schedules[slot][day].map(normalizeSegment)]))])) as Planner["schedules"],
     dailyObjectives: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.dailyObjectives?.[slot]?.[day] ?? ""]))])) as Planner["dailyObjectives"],
+  };
+}
+function safeHref(url: string) {
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed)) return trimmed;
+  if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(trimmed)) return `https://${trimmed}`;
+  return "";
+}
+function normalizeMeta(value: unknown): Partial<WeekMeta> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const keys: (keyof WeekMeta)[] = ["topic", "centralQuestion", "certificationObjectives", "article", "video", "mentalModel", "pythonConnection", "primaryLab", "evidence", "synthesisQuestion", "misconceptions", "scaffolding", "extension"];
+  const source = value as Partial<WeekMeta>;
+  const entries = keys.flatMap((key) => typeof source[key] === "string" ? [[key, source[key]]] : []);
+  return entries.length ? Object.fromEntries(entries) as Partial<WeekMeta> : undefined;
+}
+function parseAiImport(value: unknown, filename: string): ImportCandidate | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as { weekOf?: unknown; weeklyBrief?: unknown; days?: unknown; day?: unknown; learningObjective?: unknown; segments?: unknown };
+  const rawDays: Partial<Record<Day, unknown>> = {};
+  if (source.days && typeof source.days === "object") {
+    days.forEach((day) => { if (day in (source.days as object)) rawDays[day] = (source.days as Partial<Record<Day, unknown>>)[day]; });
+  } else if (typeof source.day === "string" && days.includes(source.day as Day)) {
+    rawDays[source.day as Day] = { learningObjective: source.learningObjective, segments: source.segments };
+  }
+  const schedule: Partial<Record<Day, Segment[]>> = {};
+  const objectives: Partial<Record<Day, string>> = {};
+  days.forEach((day) => {
+    const raw = rawDays[day];
+    if (!raw || typeof raw !== "object") return;
+    const dayPlan = raw as { learningObjective?: unknown; segments?: unknown };
+    if (!Array.isArray(dayPlan.segments)) return;
+    const imported = dayPlan.segments.flatMap((segment) => {
+      if (!segment || typeof segment !== "object") return [];
+      const item = segment as Partial<Segment>;
+      if (typeof item.title !== "string" || !item.title.trim()) return [];
+      return [{ ...normalizeSegment(item), id: uid(), completed: false }];
+    });
+    schedule[day] = imported;
+    objectives[day] = typeof dayPlan.learningObjective === "string" ? dayPlan.learningObjective : "";
+  });
+  if (!days.some((day) => schedule[day])) return null;
+  return {
+    filename,
+    kind: "ai",
+    weekOf: typeof source.weekOf === "string" ? source.weekOf : undefined,
+    meta: normalizeMeta(source.weeklyBrief),
+    sourceSlots: ["slot1"],
+    schedules: { slot1: schedule },
+    objectives: { slot1: objectives },
   };
 }
 function range(start: number, duration: number) {
@@ -158,6 +241,13 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [printMode, setPrintMode] = useState<"none" | "weekly" | "daily">("none");
   const [printDay, setPrintDay] = useState<Day>("monday");
+  const [pendingImport, setPendingImport] = useState<ImportCandidate | null>(null);
+  const [importSourceSlot, setImportSourceSlot] = useState<Slot>("slot1");
+  const [importTargetSlot, setImportTargetSlot] = useState<Slot>("slot1");
+  const [importDays, setImportDays] = useState<Day[]>([]);
+  const [applyImportWeek, setApplyImportWeek] = useState(true);
+  const [applyImportMeta, setApplyImportMeta] = useState(true);
+  const [restoreFullBackup, setRestoreFullBackup] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const dragSource = useRef<{ slot: Slot; day: Day; id: string } | null>(null);
 
@@ -204,6 +294,7 @@ export default function Home() {
   const totalMinutes = segments.reduce((sum, item) => sum + item.minutes, 0);
   const progress = segments.length ? Math.round(completed / segments.length * 100) : 0;
   const selected = editing ? planner.schedules[editing.slot][editing.day].find((item) => item.id === editing.id) ?? null : null;
+  const availableImportDays = pendingImport ? days.filter((day) => pendingImport.schedules[importSourceSlot]?.[day]) : [];
   const weekLabel = useMemo(() => {
     const date = new Date(`${planner.weekOf}T12:00:00`);
     return Number.isNaN(date.getTime()) ? "Unscheduled week" : `Week of ${date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
@@ -219,7 +310,7 @@ export default function Home() {
     setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [slot]: { ...current.schedules[slot], [day]: current.schedules[slot][day].map((item) => item.id === id ? { ...item, ...patch } : item) } } }));
   }
   function addSegment(day: Day) {
-    const item: Segment = { id: uid(), title: "New segment", minutes: 10, notes: "Add the purpose, materials, or stopping point.", category: "Instruction", completed: false };
+    const item: Segment = { id: uid(), title: "New segment", minutes: 10, notes: "Add the purpose, materials, or stopping point.", category: "Instruction", completed: false, resources: [] };
     setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [activeSlot]: { ...current.schedules[activeSlot], [day]: [...current.schedules[activeSlot][day], item] } } }));
     setEditing({ slot: activeSlot, day, id: item.id });
   }
@@ -227,6 +318,18 @@ export default function Home() {
     if (!editing || !selected || !confirm(`Delete “${selected.title}”?`)) return;
     setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [editing.slot]: { ...current.schedules[editing.slot], [editing.day]: current.schedules[editing.slot][editing.day].filter((item) => item.id !== editing.id) } } }));
     setEditing(null);
+  }
+  function addResource() {
+    if (!editing || !selected) return;
+    updateSegment(editing.day, editing.id, { resources: [...selected.resources, { label: "Resource", url: "" }] }, editing.slot);
+  }
+  function updateResource(index: number, patch: Partial<ResourceLink>) {
+    if (!editing || !selected) return;
+    updateSegment(editing.day, editing.id, { resources: selected.resources.map((resource, resourceIndex) => resourceIndex === index ? { ...resource, ...patch } : resource) }, editing.slot);
+  }
+  function removeResource(index: number) {
+    if (!editing || !selected) return;
+    updateSegment(editing.day, editing.id, { resources: selected.resources.filter((_, resourceIndex) => resourceIndex !== index) }, editing.slot);
   }
   function moveSegment(source: { slot: Slot; day: Day; id: string }, targetDay: Day, targetIndex: number) {
     if (source.slot !== activeSlot) return;
@@ -281,6 +384,33 @@ export default function Home() {
     download(JSON.stringify(planner, null, 2), `cybersecurity-plan-${planner.weekOf || "undated"}.json`, "application/json");
     setNotice("Portable JSON copy downloaded.");
   }
+  function downloadAiTemplate(scope: "day" | "week") {
+    const sampleSegment = (title: string) => ({
+      title,
+      minutes: 15,
+      notes: "Explain the student task, teacher moves, materials, and evidence of learning.",
+      category: "Instruction",
+      resources: [{ label: "Optional resource", url: "https://example.com" }],
+    });
+    const shared = {
+      $schema: "weekly-lesson-planner-ai-v1",
+      _instructions: "Give this JSON to GPT, Claude, Gemini, or another AI. Ask it to replace the placeholder content while preserving the keys, valid JSON syntax, and allowed category names. Aim for 90 total minutes per day.",
+      allowedCategories: categories,
+      weekOf: planner.weekOf,
+      weeklyBrief: { ...planner.meta },
+    };
+    const template = scope === "day" ? {
+      ...shared,
+      day: activeDays.includes(selectedDay) ? selectedDay : activeDays[0],
+      learningObjective: "Students will be able to…",
+      segments: [sampleSegment("Opening activity"), sampleSegment("Core learning activity"), sampleSegment("Exit ticket")],
+    } : {
+      ...shared,
+      days: Object.fromEntries(days.map((day) => [day, { learningObjective: "Students will be able to…", segments: [sampleSegment(`${dayName[day]} opening`), sampleSegment(`${dayName[day]} core activity`), sampleSegment(`${dayName[day]} reflection`)] }])),
+    };
+    download(JSON.stringify(template, null, 2), `ai-${scope}-lesson-template.json`, "application/json");
+    setNotice(`AI ${scope} template downloaded.`);
+  }
   function exportMarkdown() {
     const lines = [`# Cybersecurity Weekly Plan — ${weekLabel}`, "", `**Weekly topic:** ${planner.meta.topic || "Not set"}`, `**Central question:** ${planner.meta.centralQuestion || "Not set"}`, ""];
     slots.forEach((slot) => {
@@ -292,6 +422,7 @@ export default function Home() {
         planner.schedules[slot][day].forEach((item) => {
           const time = range(elapsed, item.minutes); elapsed += item.minutes;
           lines.push(`- [${item.completed ? "x" : " "}] **${time} · ${item.title}** (${item.minutes} min)`, `  - ${item.notes}`);
+          item.resources.forEach((resource) => lines.push(`  - [${resource.label}](${safeHref(resource.url) || resource.url})`));
         });
         lines.push("");
       });
@@ -302,9 +433,64 @@ export default function Home() {
     const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
     try {
       const parsed: unknown = JSON.parse(await file.text());
-      if (!isPlanner(parsed)) throw new Error("invalid");
-      setPlanner(normalizePlanner(parsed)); setEditing(null); setNotice(`Imported ${file.name}. It is now saved on this device.`);
-    } catch { setNotice("That file is not a valid planner JSON export. No schedule was changed."); }
+      let candidate: ImportCandidate | null = null;
+      if (isPlanner(parsed)) {
+        const backup = normalizePlanner(parsed);
+        const schedules = Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(backup.activeDays.map((day) => [day, backup.schedules[slot][day]]))])) as ImportCandidate["schedules"];
+        const objectives = Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(backup.activeDays.map((day) => [day, backup.dailyObjectives[slot][day]]))])) as ImportCandidate["objectives"];
+        candidate = { filename: file.name, kind: "backup", weekOf: backup.weekOf, meta: backup.meta, sourceSlots: [...slots], schedules, objectives, backup };
+      } else candidate = parseAiImport(parsed, file.name);
+      if (!candidate) throw new Error("invalid");
+      const sourceSlot = candidate.sourceSlots.includes(activeSlot) ? activeSlot : candidate.sourceSlots[0];
+      setPendingImport(candidate);
+      setImportSourceSlot(sourceSlot);
+      setImportTargetSlot(activeSlot);
+      setImportDays(days.filter((day) => candidate?.schedules[sourceSlot]?.[day]));
+      setApplyImportWeek(Boolean(candidate.weekOf));
+      setApplyImportMeta(Boolean(candidate.meta));
+      setRestoreFullBackup(false);
+    } catch { setNotice("That file is not a valid planner or AI lesson-plan JSON file. No schedule was changed."); }
+  }
+  function changeImportSource(slot: Slot) {
+    if (!pendingImport) return;
+    setImportSourceSlot(slot);
+    setImportDays(days.filter((day) => pendingImport.schedules[slot]?.[day]));
+  }
+  function toggleImportDay(day: Day) {
+    setImportDays((current) => current.includes(day) ? current.filter((item) => item !== day) : days.filter((item) => item === day || current.includes(item)));
+  }
+  function applySelectedImport() {
+    if (!pendingImport) return;
+    if (restoreFullBackup && pendingImport.backup) {
+      setPlanner(pendingImport.backup);
+      setPendingImport(null);
+      setEditing(null);
+      setNotice(`Restored the complete backup from ${pendingImport.filename}.`);
+      return;
+    }
+    if (!importDays.length) { setNotice("Select at least one day to import."); return; }
+    setPlanner((current) => {
+      const targetSchedule = { ...current.schedules[importTargetSlot] };
+      const targetObjectives = { ...current.dailyObjectives[importTargetSlot] };
+      importDays.forEach((day) => {
+        const incoming = pendingImport.schedules[importSourceSlot]?.[day];
+        if (incoming) targetSchedule[day] = incoming.map((item) => ({ ...item, id: uid(), resources: item.resources.map((resource) => ({ ...resource })) }));
+        targetObjectives[day] = pendingImport.objectives[importSourceSlot]?.[day] ?? "";
+      });
+      return {
+        ...current,
+        weekOf: applyImportWeek && pendingImport.weekOf ? pendingImport.weekOf : current.weekOf,
+        meta: applyImportMeta && pendingImport.meta ? { ...current.meta, ...pendingImport.meta } : current.meta,
+        activeDays: days.filter((day) => current.activeDays.includes(day) || importDays.includes(day)),
+        schedules: { ...current.schedules, [importTargetSlot]: targetSchedule },
+        dailyObjectives: { ...current.dailyObjectives, [importTargetSlot]: targetObjectives },
+      };
+    });
+    setActiveSlot(importTargetSlot);
+    if (importDays.length === 1) showDay(importDays[0]);
+    setPendingImport(null);
+    setEditing(null);
+    setNotice(`Imported ${importDays.map((day) => dayName[day]).join(", ")} into ${slotName[importTargetSlot]}.`);
   }
   function printPlan(mode: "weekly" | "daily") {
     const targetDay = activeDays.includes(printDay) ? printDay : activeDays[0];
@@ -359,6 +545,8 @@ export default function Home() {
         <input ref={importInput} className="sr-only" type="file" accept="application/json,.json" onChange={importJson} />
         <details className="more-menu"><summary>More</summary><div>
           <button type="button" onClick={exportMarkdown}>Export readable Markdown</button>
+          <button type="button" onClick={() => downloadAiTemplate("day")}>Download AI day JSON template</button>
+          <button type="button" onClick={() => downloadAiTemplate("week")}>Download AI week JSON template</button>
           <button type="button" onClick={() => printPlan("weekly")}>Save weekly PDF</button>
           <label>Daily PDF day<select value={printDay} onChange={(event) => setPrintDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select></label>
           <button type="button" onClick={() => printPlan("daily")}>Save selected day PDF</button>
@@ -395,7 +583,7 @@ export default function Home() {
               const start = elapsed; elapsed += item.minutes;
               return <div className={`segment-card category-${item.category.toLowerCase()} ${item.completed ? "completed" : ""}`} draggable key={item.id} onDragStart={(event: DragEvent<HTMLDivElement>) => { dragSource.current = { slot: activeSlot, day, id: item.id }; event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); if (dragSource.current) moveSegment(dragSource.current, day, index); dragSource.current = null; }}>
                 <div className="segment-time"><span>{range(start, item.minutes)}</span><b>{item.minutes}m</b></div>
-                <div className="segment-main"><label className="complete-check"><input type="checkbox" checked={item.completed} onChange={(event) => updateSegment(day, item.id, { completed: event.target.checked })} /><span aria-hidden="true">✓</span><span className="sr-only">Mark {item.title} complete</span></label><button className="segment-copy" type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })}><small>{item.category}</small><strong>{item.title}</strong><span>{item.notes}</span></button><div className="card-movers screen-only"><button type="button" disabled={index === 0} onClick={() => reorder(day, item.id, -1)} aria-label="Move earlier">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => reorder(day, item.id, 1)} aria-label="Move later">↓</button><button type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })} aria-label="Edit segment">•••</button></div></div>
+                <div className="segment-main"><label className="complete-check"><input type="checkbox" checked={item.completed} onChange={(event) => updateSegment(day, item.id, { completed: event.target.checked })} /><span aria-hidden="true">✓</span><span className="sr-only">Mark {item.title} complete</span></label><button className="segment-copy" type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })}><small>{item.category}</small><strong>{item.title}</strong><span>{item.notes}</span></button><div className="card-movers screen-only"><button type="button" disabled={index === 0} onClick={() => reorder(day, item.id, -1)} aria-label="Move earlier">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => reorder(day, item.id, 1)} aria-label="Move later">↓</button><button type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })} aria-label="Edit segment">•••</button></div>{item.resources.some((resource) => safeHref(resource.url)) && <div className="segment-resources">{item.resources.map((resource, resourceIndex) => { const href = safeHref(resource.url); return href ? <a key={`${resource.url}-${resourceIndex}`} href={href} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>↗ {resource.label || "Open resource"}</a> : null; })}</div>}</div>
               </div>;
             })}</div>
             <button className="add-segment screen-only" type="button" onClick={() => addSegment(day)}>＋ Add segment</button><footer><span>Daily product</span><p>{dayInfo[day].product}</p></footer>
@@ -406,8 +594,10 @@ export default function Home() {
 
     <section className="weekly-notes"><div><span>Certification objectives</span><p>{planner.meta.certificationObjectives || "Not specified."}</p></div><div><span>Required evidence</span><p>{planner.meta.evidence || "Not specified."}</p></div><div><span>Friday synthesis question</span><p>{planner.meta.synthesisQuestion || "Not specified."}</p></div><div><span>Likely misconceptions</span><p>{planner.meta.misconceptions || "Not specified."}</p></div></section>
 
+    {pendingImport && <div className="modal-backdrop import-backdrop screen-only" onMouseDown={() => setPendingImport(null)}><section className="drawer import-drawer" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">JSON import // Review before applying</p><h2 id="import-title">Choose what to import</h2></div><button type="button" onClick={() => setPendingImport(null)} aria-label="Close">×</button></div><p className="import-summary"><strong>{pendingImport.filename}</strong> contains {pendingImport.kind === "ai" ? "an AI-generated lesson plan" : "a complete planner backup"}. Only the choices below will be changed.</p>{pendingImport.backup && <label className="restore-choice"><input type="checkbox" checked={restoreFullBackup} onChange={(event) => setRestoreFullBackup(event.target.checked)} /><span><strong>Restore the complete backup</strong><small>Replace the week, weekly brief, all school days, all three slots, and completion status.</small></span></label>}{!restoreFullBackup && <><div className="import-routing">{pendingImport.kind === "backup" && <label><span>Copy from</span><select value={importSourceSlot} onChange={(event) => changeImportSource(event.target.value as Slot)}>{pendingImport.sourceSlots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label>}<label><span>Import into</span><select value={importTargetSlot} onChange={(event) => setImportTargetSlot(event.target.value as Slot)}>{slots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label></div><fieldset className="import-days"><legend>Days to import</legend>{availableImportDays.map((day) => <label key={day}><input type="checkbox" checked={importDays.includes(day)} onChange={() => toggleImportDay(day)} /><span><strong>{dayName[day]}</strong><small>{pendingImport.schedules[importSourceSlot]?.[day]?.length ?? 0} activities</small></span></label>)}</fieldset><div className="import-options">{pendingImport.weekOf && <label><input type="checkbox" checked={applyImportWeek} onChange={(event) => setApplyImportWeek(event.target.checked)} />Use imported week date <strong>{pendingImport.weekOf}</strong></label>}{pendingImport.meta && <label><input type="checkbox" checked={applyImportMeta} onChange={(event) => setApplyImportMeta(event.target.checked)} />Apply the imported weekly brief</label>}</div></>}<div className="drawer-actions"><button type="button" onClick={() => setPendingImport(null)}>Cancel</button><button className="primary" type="button" disabled={!restoreFullBackup && importDays.length === 0} onClick={applySelectedImport}>{restoreFullBackup ? "Restore backup" : `Import ${importDays.length} day${importDays.length === 1 ? "" : "s"}`}</button></div></section></div>}
+
     {briefOpen && <div className="modal-backdrop screen-only" onMouseDown={() => setBriefOpen(false)}><section className="drawer weekly-drawer" role="dialog" aria-modal="true" aria-labelledby="brief-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Planning dossier</p><h2 id="brief-title">Weekly brief</h2></div><button type="button" onClick={() => setBriefOpen(false)} aria-label="Close">×</button></div><div className="field-grid">{metaFields.map(([key, label, placeholder]) => <label key={key} className={key === "topic" || key === "centralQuestion" ? "wide" : ""}><span>{label}</span><textarea rows={key === "topic" ? 2 : 3} value={planner.meta[key]} placeholder={placeholder} onChange={(event) => updateMeta(key, event.target.value)} /></label>)}</div><div className="drawer-actions"><button className="primary" type="button" onClick={() => setBriefOpen(false)}>Done</button></div></section></div>}
 
-    {editing && selected && <div className="modal-backdrop screen-only" onMouseDown={() => setEditing(null)}><section className="drawer segment-drawer" role="dialog" aria-modal="true" aria-labelledby="segment-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">{dayName[editing.day]} // {slotName[editing.slot]}</p><h2 id="segment-title">Edit segment</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close">×</button></div><label><span>Activity title</span><input value={selected.title} onChange={(event) => updateSegment(editing.day, editing.id, { title: event.target.value }, editing.slot)} /></label><div className="split-fields"><label><span>Minutes</span><input type="number" min="1" max="180" value={selected.minutes} onChange={(event) => updateSegment(editing.day, editing.id, { minutes: Math.max(1, Number(event.target.value) || 1) }, editing.slot)} /></label><label><span>Category</span><select value={selected.category} onChange={(event) => updateSegment(editing.day, editing.id, { category: event.target.value as Category }, editing.slot)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><label><span>Purpose and teacher notes</span><textarea rows={7} value={selected.notes} onChange={(event) => updateSegment(editing.day, editing.id, { notes: event.target.value }, editing.slot)} /></label><label className="completion-row"><input type="checkbox" checked={selected.completed} onChange={(event) => updateSegment(editing.day, editing.id, { completed: event.target.checked }, editing.slot)} />Completed as planned</label><div className="drawer-actions"><button className="danger" type="button" onClick={deleteSegment}>Delete</button><button className="primary" type="button" onClick={() => setEditing(null)}>Done</button></div></section></div>}
+    {editing && selected && <div className="modal-backdrop screen-only" onMouseDown={() => setEditing(null)}><section className="drawer segment-drawer" role="dialog" aria-modal="true" aria-labelledby="segment-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">{dayName[editing.day]} // {slotName[editing.slot]}</p><h2 id="segment-title">Edit segment</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close">×</button></div><label><span>Activity title</span><input value={selected.title} onChange={(event) => updateSegment(editing.day, editing.id, { title: event.target.value }, editing.slot)} /></label><div className="split-fields"><label><span>Minutes</span><input type="number" min="1" max="180" value={selected.minutes} onChange={(event) => updateSegment(editing.day, editing.id, { minutes: Math.max(1, Number(event.target.value) || 1) }, editing.slot)} /></label><label><span>Category</span><select value={selected.category} onChange={(event) => updateSegment(editing.day, editing.id, { category: event.target.value as Category }, editing.slot)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><label><span>Purpose and teacher notes</span><textarea rows={7} value={selected.notes} onChange={(event) => updateSegment(editing.day, editing.id, { notes: event.target.value }, editing.slot)} /></label><section className="resource-editor"><div><span>Activity links</span><button type="button" onClick={addResource}>＋ Add link</button></div>{selected.resources.length === 0 && <p>Add websites, documents, videos, or other resources students can open from this card.</p>}{selected.resources.map((resource, index) => <div className="resource-row" key={index}><label><span>Link label</span><input value={resource.label} placeholder="Lab instructions" onChange={(event) => updateResource(index, { label: event.target.value })} /></label><label><span>Web address</span><input type="url" value={resource.url} placeholder="https://…" onChange={(event) => updateResource(index, { url: event.target.value })} /></label><button type="button" onClick={() => removeResource(index)} aria-label={`Remove ${resource.label || "link"}`}>×</button></div>)}</section><label className="completion-row"><input type="checkbox" checked={selected.completed} onChange={(event) => updateSegment(editing.day, editing.id, { completed: event.target.checked }, editing.slot)} />Completed as planned</label><div className="drawer-actions"><button className="danger" type="button" onClick={deleteSegment}>Delete</button><button className="primary" type="button" onClick={() => setEditing(null)}>Done</button></div></section></div>}
   </main>;
 }
