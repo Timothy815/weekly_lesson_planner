@@ -24,6 +24,8 @@ In Edit mode, drag an activity card onto another day or onto a Day View tab to m
 
 Open **Weekly summary** for a report generated directly from the selected class slot’s current plan. It automatically collects the week and class, day and activity counts, planned minutes, learning objectives, desired outcomes, daily products, chronological activity sequences, and working resource links. Editing any day or activity updates the report automatically, so none of that information needs to be entered again.
 
+Use **Print / save PDF** at the bottom of the Weekly Summary to produce a paper-friendly report. The print version includes resource names and full web addresses so links remain useful in a PDF or on paper.
+
 Topic, central question, certification notes, lab context, and similar week-level details are optional. Add them under **Edit optional week-level context** only when they provide information that cannot be inferred reliably from the lesson plans.
 
 ## Finish a day and move into next week
