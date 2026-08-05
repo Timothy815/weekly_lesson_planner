@@ -41,6 +41,7 @@ type Planner = {
   dailyDetails: Record<Slot, Record<Day, DayDetails>>;
   teachingRecords: Record<Slot, Partial<Record<Day, TeachingRecord>>>;
   library: LibraryItem[];
+  slotStartTimes: Record<Slot, string>;
 };
 type ImportCandidate = {
   filename: string;
@@ -53,8 +54,8 @@ type ImportCandidate = {
   details: Partial<Record<Slot, Partial<Record<Day, DayDetails>>>>;
   backup?: Planner;
 };
-type ArchiveDocument = { format: "weekly-lesson-planner-archive"; version: 1; archivedAt: string; planner: Planner };
-type ArchiveEntry = ArchiveDocument & { filename: string };
+type ArchiveDocument = { format: "weekly-lesson-planner-archive"; version: 1; title?: string; archivedAt: string; planner: Planner };
+type ArchiveEntry = ArchiveDocument & { title: string; filename: string };
 type ArchiveStatus = "unsupported" | "disconnected" | "permission" | "connected" | "working" | "error";
 type PlannerUpdate = Planner | ((current: Planner) => Planner);
 type DirectoryPermissionHandle = FileSystemDirectoryHandle & {
@@ -171,6 +172,7 @@ function defaultPlanner(): Planner {
     dailyDetails: { slot1: freshDetails(), slot2: freshDetails(), slot3: freshDetails() },
     teachingRecords: { slot1: {}, slot2: {}, slot3: {} },
     library: [],
+    slotStartTimes: { slot1: "", slot2: "", slot3: "" },
   };
 }
 function isPlanner(value: unknown): boolean {
@@ -188,7 +190,8 @@ function isPlanner(value: unknown): boolean {
     && (!candidate.dailyObjectives || slots.every((slot) => days.every((day) => typeof candidate.dailyObjectives?.[slot]?.[day] === "string")))
     && (!candidate.dailyDetails || slots.every((slot) => days.every((day) => typeof candidate.dailyDetails?.[slot]?.[day]?.focus === "string" && typeof candidate.dailyDetails?.[slot]?.[day]?.outcome === "string")))
     && (!candidate.teachingRecords || slots.every((slot) => candidate.teachingRecords?.[slot] && typeof candidate.teachingRecords[slot] === "object"))
-    && (!candidate.library || Array.isArray(candidate.library));
+    && (!candidate.library || Array.isArray(candidate.library))
+    && (!candidate.slotStartTimes || slots.every((slot) => typeof candidate.slotStartTimes?.[slot] === "string"));
 }
 function normalizeResources(value: unknown): ResourceLink[] {
   if (!Array.isArray(value)) return [];
@@ -272,7 +275,7 @@ function normalizeLibraryItem(value: unknown): LibraryItem | null {
   return null;
 }
 function normalizePlanner(input: unknown): Planner {
-  const value = input as Omit<Planner, "dailyObjectives" | "dailyDetails" | "teachingRecords" | "library"> & { dailyObjectives?: Planner["dailyObjectives"]; dailyDetails?: Planner["dailyDetails"]; teachingRecords?: Planner["teachingRecords"]; library?: unknown[] };
+  const value = input as Omit<Planner, "dailyObjectives" | "dailyDetails" | "teachingRecords" | "library" | "slotStartTimes"> & { dailyObjectives?: Planner["dailyObjectives"]; dailyDetails?: Planner["dailyDetails"]; teachingRecords?: Planner["teachingRecords"]; library?: unknown[]; slotStartTimes?: Partial<Record<Slot, string>> };
   return {
     ...value,
     schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.schedules[slot][day].map(normalizeSegment)]))])) as Planner["schedules"],
@@ -289,6 +292,7 @@ function normalizePlanner(input: unknown): Planner {
       const normalized = normalizeLibraryItem(item);
       return normalized ? [normalized] : [];
     }) : [],
+    slotStartTimes: Object.fromEntries(slots.map((slot) => [slot, typeof value.slotStartTimes?.[slot] === "string" ? value.slotStartTimes[slot] : ""])) as Planner["slotStartTimes"],
   };
 }
 function isArchiveDocument(value: unknown): value is ArchiveDocument {
@@ -326,10 +330,13 @@ async function rememberArchiveHandle(handle: FileSystemDirectoryHandle): Promise
     transaction.onerror = () => { database.close(); reject(transaction.error); };
   });
 }
-function archiveFilename(planner: Planner, archivedAt: string) {
-  const topic = planner.meta.topic.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "lesson-plan";
+function archiveFilename(planner: Planner, archivedAt: string, title: string) {
+  const topic = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || planner.meta.topic.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "lesson-plan";
   const timestamp = archivedAt.replace(/[:.]/g, "-");
   return `${planner.weekOf || "undated"}--${topic}--${timestamp}.lesson-plan.json`;
+}
+function defaultArchiveTitle(planner: Planner) {
+  return planner.meta.topic.trim() || `Week of ${planner.weekOf || "undated"}`;
 }
 function formatArchiveDate(value: string) {
   const date = new Date(value);
@@ -390,9 +397,25 @@ function parseAiImport(value: unknown, filename: string): ImportCandidate | null
     details: { slot1: details },
   };
 }
-function range(start: number, duration: number) {
-  const clock = (minutes: number) => `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
-  return `${clock(start)}–${clock(start + duration)}`;
+function range(start: number, duration: number, slotStart = "") {
+  const match = /^(\d{2}):(\d{2})$/.exec(slotStart);
+  if (!match) {
+    const relativeClock = (minutes: number) => `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+    return `${relativeClock(start)}–${relativeClock(start + duration)}`;
+  }
+  const base = Number(match[1]) * 60 + Number(match[2]);
+  const clock = (minutes: number) => {
+    const normalized = ((minutes % 1440) + 1440) % 1440;
+    const hour = Math.floor(normalized / 60);
+    return { text: `${hour % 12 || 12}:${String(normalized % 60).padStart(2, "0")}`, period: hour < 12 ? "AM" : "PM" };
+  };
+  const from = clock(base + start); const to = clock(base + start + duration);
+  return from.period === to.period ? `${from.text}–${to.text} ${to.period}` : `${from.text} ${from.period}–${to.text} ${to.period}`;
+}
+function displaySlotTime(value: string) {
+  if (!value) return "";
+  const formatted = range(0, 0, value);
+  return formatted.split("–")[0] + (formatted.includes(" AM") ? " AM" : formatted.includes(" PM") ? " PM" : "");
 }
 function dateForDay(weekOf: string, day: Day) {
   const date = new Date(`${weekOf}T12:00:00`);
@@ -448,6 +471,8 @@ export default function Home() {
   const [libraryFilter, setLibraryFilter] = useState<"all" | LibraryItem["kind"]>("all");
   const [libraryTargetSlot, setLibraryTargetSlot] = useState<Slot>("slot1");
   const [libraryTargetDay, setLibraryTargetDay] = useState<Day>("monday");
+  const [slotTimesOpen, setSlotTimesOpen] = useState(false);
+  const [archiveTitle, setArchiveTitle] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   const dragSource = useRef<{ slot: Slot; day: Day; id: string } | null>(null);
   const dayDragSource = useRef<Day | null>(null);
@@ -586,6 +611,16 @@ export default function Home() {
 
   function updateMeta(key: keyof WeekMeta, value: string) {
     changePlanner((current) => ({ ...current, meta: { ...current.meta, [key]: value } }));
+  }
+  function updateSlotStartTime(slot: Slot, value: string) {
+    changePlanner((current) => ({ ...current, slotStartTimes: { ...current.slotStartTimes, [slot]: value } }));
+  }
+  function clearSlotStartTimes() {
+    changePlanner((current) => ({ ...current, slotStartTimes: { slot1: "", slot2: "", slot3: "" } }));
+  }
+  function openArchiveManager() {
+    setArchiveTitle(planner.meta.topic.trim() || `Week of ${planner.weekOf || "undated"}`);
+    setArchiveOpen(true);
   }
   function updateObjective(day: Day, value: string, slot = activeSlot) {
     changePlanner((current) => ({ ...current, dailyObjectives: { ...current.dailyObjectives, [slot]: { ...current.dailyObjectives[slot], [day]: value } } }));
@@ -860,9 +895,11 @@ export default function Home() {
           const file = await child.getFile();
           const parsed: unknown = JSON.parse(await file.text());
           if (isArchiveDocument(parsed)) {
-            found.push({ ...parsed, planner: normalizePlanner(parsed.planner), filename: child.name });
+            const normalized = normalizePlanner(parsed.planner);
+            found.push({ ...parsed, title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : defaultArchiveTitle(normalized), planner: normalized, filename: child.name });
           } else if (isPlanner(parsed)) {
-            found.push({ format: "weekly-lesson-planner-archive", version: 1, archivedAt: new Date(file.lastModified).toISOString(), planner: normalizePlanner(parsed), filename: child.name });
+            const normalized = normalizePlanner(parsed);
+            found.push({ format: "weekly-lesson-planner-archive", version: 1, title: defaultArchiveTitle(normalized), archivedAt: new Date(file.lastModified).toISOString(), planner: normalized, filename: child.name });
           }
         } catch {
           // Ignore unrelated or malformed JSON files in the selected directory.
@@ -898,20 +935,21 @@ export default function Home() {
       setArchiveMessage("The folder could not be connected. Please try again and allow read/write access.");
     }
   }
-  async function savePlannerToArchive(source: Planner, announce = true) {
+  async function savePlannerToArchive(source: Planner, announce = true, requestedTitle = "") {
     if (!archiveHandle) return false;
     setArchiveStatus("working");
     setArchiveMessage("Saving this week to Google Drive…");
     try {
       const archivedAt = new Date().toISOString();
-      const filename = archiveFilename(source, archivedAt);
-      const document: ArchiveDocument = { format: "weekly-lesson-planner-archive", version: 1, archivedAt, planner: source };
+      const title = requestedTitle.trim() || defaultArchiveTitle(source);
+      const filename = archiveFilename(source, archivedAt, title);
+      const document: ArchiveDocument = { format: "weekly-lesson-planner-archive", version: 1, title, archivedAt, planner: source };
       const fileHandle = await archiveHandle.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(JSON.stringify(document, null, 2));
       await writable.close();
       await scanArchiveFolder(archiveHandle);
-      if (announce) setNotice(`Archived the week of ${source.weekOf || "an undated week"} in “${archiveHandle.name}”.`);
+      if (announce) setNotice(`Archived “${title}” in “${archiveHandle.name}”.`);
       return true;
     } catch {
       setArchiveStatus("permission");
@@ -921,7 +959,7 @@ export default function Home() {
   }
   async function archiveCurrentWeek() {
     if (!archiveHandle) { await connectArchiveFolder(); return; }
-    await savePlannerToArchive(planner);
+    await savePlannerToArchive(planner, true, archiveTitle);
   }
   async function startNextWeek() {
     if (!archiveHandle && !confirm("The Google Drive archive folder is not connected. Start the next week without creating a permanent archive first?\n\nYou can still use Undo during this open session.")) return;
@@ -951,6 +989,7 @@ export default function Home() {
     if (carryWeeklyBrief) next.meta = { ...planner.meta };
     else if (nextWeekMode === "copy") next.meta = { ...defaultPlanner().meta };
     next.library = structuredClone(planner.library);
+    next.slotStartTimes = { ...planner.slotStartTimes };
     changePlanner(next);
     setSelectedDay(next.activeDays[0]);
     setPrintDay(next.activeDays[0]);
@@ -960,9 +999,9 @@ export default function Home() {
     setNotice(`${archiveHandle ? "Archived the current week and started" : "Started"} the week of ${nextDate}. Undo is available if you need to return.`);
   }
   function restoreArchivedWeek(entry: ArchiveEntry) {
-    const topic = entry.planner.meta.topic || `week of ${entry.planner.weekOf}`;
-    if (!confirm(`Replace the current planner with the archived plan “${topic}”?\n\nThe current week will remain only if you archive or export it first.`)) return;
+    if (!confirm(`Replace the current planner with the archived plan “${entry.title}”?\n\nThe current week will remain only if you archive or export it first.`)) return;
     const restored = normalizePlanner(entry.planner);
+    if (slots.every((slot) => !restored.slotStartTimes[slot]) && slots.some((slot) => planner.slotStartTimes[slot])) restored.slotStartTimes = { ...planner.slotStartTimes };
     const currentIds = new Set(planner.library.map((item) => item.id));
     restored.library = [...planner.library, ...restored.library.filter((item) => !currentIds.has(item.id))];
     changePlanner(restored);
@@ -981,6 +1020,25 @@ export default function Home() {
     } catch {
       setArchiveStatus("error");
       setArchiveMessage("That archive file could not be deleted. Refresh the folder and try again.");
+    }
+  }
+  async function renameArchivedWeek(entry: ArchiveEntry) {
+    if (!archiveHandle) return;
+    const title = prompt("Archive title:", entry.title)?.trim();
+    if (!title || title === entry.title) return;
+    try {
+      const renamedFilename = archiveFilename(entry.planner, entry.archivedAt, title);
+      const fileHandle = await archiveHandle.getFileHandle(renamedFilename, { create: true });
+      const writable = await fileHandle.createWritable();
+      const document: ArchiveDocument = { format: "weekly-lesson-planner-archive", version: 1, title, archivedAt: entry.archivedAt, planner: entry.planner };
+      await writable.write(JSON.stringify(document, null, 2));
+      await writable.close();
+      if (renamedFilename !== entry.filename) await archiveHandle.removeEntry(entry.filename);
+      await scanArchiveFolder(archiveHandle);
+      setNotice(`Renamed the archive and its file to “${title}”.`);
+    } catch {
+      setArchiveStatus("error");
+      setArchiveMessage("That archive title could not be changed. Reconnect the folder and try again.");
     }
   }
   function downloadAiTemplate(scope: "day" | "week") {
@@ -1015,14 +1073,14 @@ export default function Home() {
   function exportMarkdown() {
     const lines = [`# Cybersecurity Weekly Plan — ${weekLabel}`, "", `**Weekly topic:** ${planner.meta.topic || "Not set"}`, `**Central question:** ${planner.meta.centralQuestion || "Not set"}`, ""];
     slots.forEach((slot) => {
-      lines.push(`## ${slotName[slot]}`, "");
+      lines.push(`## ${slotName[slot]}${planner.slotStartTimes[slot] ? ` — starts ${displaySlotTime(planner.slotStartTimes[slot])}` : ""}`, "");
       activeDays.forEach((day) => {
         lines.push(`### ${dayName[day]} — ${planner.dailyDetails[slot][day].focus}`, "");
         lines.push(`**Learning objective:** ${planner.dailyObjectives[slot][day] || "Not set"}`, "");
         lines.push(`**Suggested outcome:** ${planner.dailyDetails[slot][day].outcome || "Not set"}`, "");
         let elapsed = 0;
         planner.schedules[slot][day].forEach((item) => {
-          const time = range(elapsed, item.minutes); elapsed += item.minutes;
+          const time = range(elapsed, item.minutes, planner.slotStartTimes[slot]); elapsed += item.minutes;
           lines.push(`- [${item.completed ? "x" : " "}] **${time} · ${item.title}** (${item.minutes} min)`, `  - ${item.notes}`);
           item.resources.forEach((resource) => lines.push(`  - [${resource.label}](${safeHref(resource.url) || resource.url})`));
         });
@@ -1072,6 +1130,7 @@ export default function Home() {
     if (!pendingImport) return;
     if (restoreFullBackup && pendingImport.backup) {
       const backup = normalizePlanner(pendingImport.backup);
+      if (slots.every((slot) => !backup.slotStartTimes[slot]) && slots.some((slot) => planner.slotStartTimes[slot])) backup.slotStartTimes = { ...planner.slotStartTimes };
       const currentIds = new Set(planner.library.map((item) => item.id));
       backup.library = [...planner.library, ...backup.library.filter((item) => !currentIds.has(item.id))];
       changePlanner(backup);
@@ -1116,7 +1175,7 @@ export default function Home() {
   }
   function restoreTemplate() {
     if (!confirm("Replace this entire week with a fresh routine template? Export JSON first if you may need this plan later.")) return;
-    const fresh = defaultPlanner(); fresh.weekOf = planner.weekOf; fresh.library = structuredClone(planner.library); changePlanner(fresh); setEditing(null); setNotice("The routine template was restored for all three slots. Your reusable library was preserved.");
+    const fresh = defaultPlanner(); fresh.weekOf = planner.weekOf; fresh.library = structuredClone(planner.library); fresh.slotStartTimes = { ...planner.slotStartTimes }; changePlanner(fresh); setEditing(null); setNotice("The routine template was restored for all three slots. Your reusable library and slot times were preserved.");
   }
 
   const metaFields: [keyof WeekMeta, string, string][] = [
@@ -1147,7 +1206,7 @@ export default function Home() {
     </section>
 
     <section className="control-deck screen-only" aria-label="Planner controls">
-      <div className="slot-tabs" role="tablist">{slots.map((slot) => <button key={slot} role="tab" aria-selected={activeSlot === slot} className={activeSlot === slot ? "active" : ""} onClick={() => setActiveSlot(slot)}>{slotName[slot]}</button>)}</div>
+      <div className="slot-tabs" role="tablist">{slots.map((slot) => <button key={slot} role="tab" aria-selected={activeSlot === slot} className={activeSlot === slot ? "active" : ""} onClick={() => setActiveSlot(slot)}><span>{slotName[slot]}</span>{planner.slotStartTimes[slot] && <small>{displaySlotTime(planner.slotStartTimes[slot])}</small>}</button>)}</div>
       <div className="control-actions">
         <div className="mode-toggle" aria-label="Planner mode">
           <button type="button" className={appMode === "edit" ? "active" : ""} aria-pressed={appMode === "edit"} onClick={() => changeAppMode("edit")}>Edit</button>
@@ -1161,11 +1220,12 @@ export default function Home() {
           <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => setViewMode("week")}>Full week</button>
           <button type="button" className={viewMode === "day" ? "active" : ""} aria-pressed={viewMode === "day"} onClick={() => showDay(activeDays.includes(selectedDay) ? selectedDay : activeDays[0])}>Day view</button>
         </div>
-        <button type="button" onClick={() => setArchiveOpen(true)}>Archive <span>{archiveEntries.length || ""}</span></button>
+        <button type="button" onClick={openArchiveManager}>Archive <span>{archiveEntries.length || ""}</span></button>
         <button type="button" onClick={openLibraryManager}>Library <span>{planner.library.length || ""}</span></button>
         {!displayMode && <><button type="button" onClick={() => setDaysOpen((open) => !open)}>School days <span>{activeDays.length}/5</span></button>
         <button className="finish-day-action" type="button" onClick={() => openFinishDay()}>Finish day</button>
         <button type="button" onClick={() => setNextWeekOpen(true)}>Start next week</button>
+        <button type="button" onClick={() => setSlotTimesOpen(true)}>Slot times</button>
         <button type="button" onClick={() => setBriefOpen(true)}>Weekly brief</button>
         <button type="button" onClick={exportJson}>Export JSON</button>
         <button type="button" onClick={() => importInput.current?.click()}>Import JSON</button>
@@ -1192,10 +1252,10 @@ export default function Home() {
 
     {notice && <div className="notice screen-only" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss">×</button></div>}
     <section className="status-strip screen-only">
-      <div><span>Active schedule</span><strong>{slotName[activeSlot]}</strong></div><div><span>{viewMode === "day" ? `${dayName[visibleDays[0]]} airtime` : "Planned airtime"}</span><strong>{totalMinutes} minutes</strong></div><div><span>Segments complete</span><strong>{completed} / {segments.length}</strong></div><div className="progress-stat"><span>{viewMode === "day" ? "Daily progress" : "Weekly progress"}</span><strong>{progress}%</strong><i><b style={{ width: `${progress}%` }} /></i></div>
+      <div><span>Active schedule</span><strong>{slotName[activeSlot]}{planner.slotStartTimes[activeSlot] ? ` · ${displaySlotTime(planner.slotStartTimes[activeSlot])}` : ""}</strong></div><div><span>{viewMode === "day" ? `${dayName[visibleDays[0]]} airtime` : "Planned airtime"}</span><strong>{totalMinutes} minutes</strong></div><div><span>Segments complete</span><strong>{completed} / {segments.length}</strong></div><div className="progress-stat"><span>{viewMode === "day" ? "Daily progress" : "Weekly progress"}</span><strong>{progress}%</strong><i><b style={{ width: `${progress}%` }} /></i></div>
     </section>
 
-    <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}{printMode === "daily" && planner.dailyObjectives[activeSlot][printDay] && <p className="print-objective"><strong>Learning objective:</strong> {planner.dailyObjectives[activeSlot][printDay]}</p>}</div>
+    <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}{planner.slotStartTimes[activeSlot] ? ` · ${displaySlotTime(planner.slotStartTimes[activeSlot])}` : ""}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}{printMode === "daily" && planner.dailyObjectives[activeSlot][printDay] && <p className="print-objective"><strong>Learning objective:</strong> {planner.dailyObjectives[activeSlot][printDay]}</p>}</div>
 
     <section className="schedule-section">
       <div className="schedule-title screen-only"><div><p className="eyebrow">01 // {viewMode === "day" ? "Daily plan" : "Broadcast board"}</p><h2>{viewMode === "day" ? `${dayName[visibleDays[0]]}, ${dateForDay(planner.weekOf, visibleDays[0])}` : weekLabel}</h2></div><p>{displayMode ? "A polished classroom-ready view of the selected plan. Resource links remain available for quick access." : viewMode === "day" ? "Edit the objective and activities here. Drag an activity or the entire day onto a day tab to move the plan." : "Drag activities between days, or drag a day header onto another column to swap both complete day plans."}</p></div>
@@ -1211,7 +1271,7 @@ export default function Home() {
               const start = elapsed; elapsed += item.minutes;
               const activityCopy = <><small>{item.category}</small><strong>{item.title}</strong><span>{item.notes}</span></>;
               return <div className={`segment-card category-${item.category.toLowerCase()} ${item.completed ? "completed" : ""}`} draggable={!displayMode} key={item.id} onDragStart={(event: DragEvent<HTMLDivElement>) => { if (displayMode) return; dragSource.current = { slot: activeSlot, day, id: item.id }; dayDragSource.current = null; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `activity:${item.id}`); }} onDragEnd={() => { dragSource.current = null; }} onDragOver={(event) => { if (!displayMode) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); dropPlanOnDay(day, index); }}>
-                <div className="segment-time"><span>{range(start, item.minutes)}</span>{displayMode && item.completed && <em>✓ Complete</em>}<b>{item.minutes}m</b></div>
+                <div className="segment-time"><span>{range(start, item.minutes, planner.slotStartTimes[activeSlot])}</span>{displayMode && item.completed && <em>✓ Complete</em>}<b>{item.minutes}m</b></div>
                 <div className="segment-main">{!displayMode && <label className="complete-check"><input type="checkbox" checked={item.completed} onChange={(event) => updateSegment(day, item.id, { completed: event.target.checked })} /><span aria-hidden="true">✓</span><span className="sr-only">Mark {item.title} complete</span></label>}{displayMode ? <div className="segment-copy segment-display-copy">{activityCopy}</div> : <button className="segment-copy" type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })}>{activityCopy}</button>}{!displayMode && <div className="card-movers screen-only"><button type="button" disabled={index === 0} onClick={() => reorder(day, item.id, -1)} aria-label="Move earlier">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => reorder(day, item.id, 1)} aria-label="Move later">↓</button><button type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })} aria-label="Edit segment">•••</button></div>}{item.resources.some((resource) => safeHref(resource.url)) && <div className="segment-resources">{item.resources.map((resource, resourceIndex) => { const href = safeHref(resource.url); return href ? <a key={`${resource.url}-${resourceIndex}`} href={href} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>↗ {resource.label || "Open resource"}</a> : null; })}</div>}</div>
               </div>;
             })}</div>
@@ -1222,6 +1282,8 @@ export default function Home() {
     </section>
 
     <section className="weekly-notes"><div><span>Certification objectives</span><p>{planner.meta.certificationObjectives || "Not specified."}</p></div><div><span>Required evidence</span><p>{planner.meta.evidence || "Not specified."}</p></div><div><span>Friday synthesis question</span><p>{planner.meta.synthesisQuestion || "Not specified."}</p></div><div><span>Likely misconceptions</span><p>{planner.meta.misconceptions || "Not specified."}</p></div></section>
+
+    {slotTimesOpen && <div className="modal-backdrop slot-times-backdrop screen-only" onMouseDown={() => setSlotTimesOpen(false)}><section className="drawer slot-times-drawer" role="dialog" aria-modal="true" aria-labelledby="slot-times-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Bell schedule // Real activity times</p><h2 id="slot-times-title">Slot start times</h2></div><button type="button" onClick={() => setSlotTimesOpen(false)} aria-label="Close">×</button></div><p className="slot-times-summary">Set the beginning of each 90-minute class. Activity cards automatically calculate their clock ranges from these times and update whenever activities move or change length.</p><div className="slot-time-fields">{slots.map((slot) => <label key={slot}><span>{slotName[slot]}</span><input type="time" value={planner.slotStartTimes[slot]} onChange={(event) => updateSlotStartTime(slot, event.target.value)} /><small>{planner.slotStartTimes[slot] ? `Runs approximately ${range(0, 90, planner.slotStartTimes[slot])}` : "No start time set; cards use relative elapsed time."}</small></label>)}</div><div className="drawer-actions"><button type="button" onClick={clearSlotStartTimes}>Clear times</button><button className="primary" type="button" onClick={() => setSlotTimesOpen(false)}>Done</button></div></section></div>}
 
     {libraryOpen && <div className="modal-backdrop library-backdrop screen-only" onMouseDown={() => setLibraryOpen(false)}><section className="drawer library-drawer" role="dialog" aria-modal="true" aria-labelledby="library-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Reusable teaching assets // {planner.library.length} saved</p><h2 id="library-title">Lesson library</h2></div><button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close">×</button></div>
       <section className="library-target"><div><label><span>Target class</span><select value={libraryTargetSlot} onChange={(event) => setLibraryTargetSlot(event.target.value as Slot)}>{slots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label><label><span>Target day</span><select value={libraryTargetDay} onChange={(event) => setLibraryTargetDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select></label></div><p>Activities are added to this target. Saved days replace this target after confirmation.</p></section>
@@ -1251,9 +1313,10 @@ export default function Home() {
 
     {archiveOpen && <div className="modal-backdrop archive-backdrop screen-only" onMouseDown={() => setArchiveOpen(false)}><section className="drawer archive-drawer" role="dialog" aria-modal="true" aria-labelledby="archive-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Durable planning library // Google Drive</p><h2 id="archive-title">Week archive</h2></div><button type="button" onClick={() => setArchiveOpen(false)} aria-label="Close">×</button></div>
       <section className={`archive-connection status-${archiveStatus}`}><div><span>{archiveStatus === "connected" ? "Folder connected" : archiveStatus === "working" ? "Working" : archiveStatus === "permission" ? "Reconnect needed" : archiveStatus === "unsupported" ? "Browser fallback" : "Archive folder"}</span><strong>{archiveHandle?.name || "Weekly Lesson Planner Archive"}</strong><p aria-live="polite">{archiveStatus === "unsupported" ? "Folder access is unavailable in this browser. You can still download a portable JSON backup." : archiveMessage || "Choose the folder you created in Google Drive. No share link or permission change is needed."}</p></div><i aria-hidden="true">{archiveStatus === "connected" ? "✓" : archiveStatus === "working" ? "…" : "↗"}</i></section>
+      <label className="archive-title-field"><span>Archive title</span><input value={archiveTitle} placeholder={`Week of ${planner.weekOf || "…"}`} onChange={(event) => setArchiveTitle(event.target.value)} /><small>This title appears in the archive list and is used in the saved filename.</small></label>
       <div className="archive-toolbar">{archiveStatus === "unsupported" ? <button className="primary" type="button" onClick={exportJson}>Download JSON backup</button> : <><button className="primary" type="button" disabled={archiveStatus === "working"} onClick={() => archiveHandle && archiveStatus === "connected" ? archiveCurrentWeek() : connectArchiveFolder(false)}>{archiveHandle && archiveStatus === "connected" ? "Archive current week" : archiveStatus === "permission" ? "Reconnect folder" : "Connect archive folder"}</button>{archiveHandle && <button type="button" disabled={archiveStatus === "working"} onClick={() => scanArchiveFolder()}>Refresh</button>}<button type="button" disabled={archiveStatus === "working"} onClick={() => connectArchiveFolder(true)}>{archiveHandle ? "Change folder" : "Choose folder"}</button></>}</div>
       <p className="archive-assurance">The archive files live in Google Drive. If browser storage is cleared, reconnect this same folder and the app will rebuild the list.</p>
-      <div className="archive-list">{archiveEntries.length === 0 ? <div className="archive-empty"><strong>No archived weeks are listed yet.</strong><p>Connect the folder, then use <em>Archive current week</em> whenever you want a permanent snapshot.</p></div> : archiveEntries.map((entry) => <article className="archive-card" key={entry.filename}><div><span>{entry.planner.weekOf ? `Week of ${entry.planner.weekOf}` : "Undated week"}</span><h3>{entry.planner.meta.topic || "Untitled lesson plan"}</h3><p>{entry.planner.activeDays.length} school day{entry.planner.activeDays.length === 1 ? "" : "s"} · Saved {formatArchiveDate(entry.archivedAt)}</p><small title={entry.filename}>{entry.filename}</small></div><div><button type="button" onClick={() => restoreArchivedWeek(entry)}>Restore</button><button className="danger" type="button" onClick={() => deleteArchivedWeek(entry)}>Delete</button></div></article>)}</div>
+      <div className="archive-list">{archiveEntries.length === 0 ? <div className="archive-empty"><strong>No archived weeks are listed yet.</strong><p>Connect the folder, add a title, then use <em>Archive current week</em> whenever you want a permanent snapshot.</p></div> : archiveEntries.map((entry) => <article className="archive-card" key={entry.filename}><div><span>{entry.planner.weekOf ? `Week of ${entry.planner.weekOf}` : "Undated week"}</span><h3>{entry.title}</h3><p>{entry.planner.activeDays.length} school day{entry.planner.activeDays.length === 1 ? "" : "s"} · Saved {formatArchiveDate(entry.archivedAt)}</p><small title={entry.filename}>{entry.filename}</small></div><div><button type="button" onClick={() => restoreArchivedWeek(entry)}>Restore</button><button type="button" onClick={() => renameArchivedWeek(entry)}>Rename</button><button className="danger" type="button" onClick={() => deleteArchivedWeek(entry)}>Delete</button></div></article>)}</div>
     </section></div>}
 
     {pendingImport && <div className="modal-backdrop import-backdrop screen-only" onMouseDown={() => setPendingImport(null)}><section className="drawer import-drawer" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">JSON import // Review before applying</p><h2 id="import-title">Choose what to import</h2></div><button type="button" onClick={() => setPendingImport(null)} aria-label="Close">×</button></div><p className="import-summary"><strong>{pendingImport.filename}</strong> contains {pendingImport.kind === "ai" ? "an AI-generated lesson plan" : "a complete planner backup"}. Only the choices below will be changed.</p>{pendingImport.backup && <label className="restore-choice"><input type="checkbox" checked={restoreFullBackup} onChange={(event) => setRestoreFullBackup(event.target.checked)} /><span><strong>Restore the complete backup</strong><small>Replace the week, weekly brief, all school days, all three slots, and completion status.</small></span></label>}{!restoreFullBackup && <><div className="import-routing">{pendingImport.kind === "backup" && <label><span>Copy from</span><select value={importSourceSlot} onChange={(event) => changeImportSource(event.target.value as Slot)}>{pendingImport.sourceSlots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label>}<label><span>Import into</span><select value={importTargetSlot} onChange={(event) => setImportTargetSlot(event.target.value as Slot)}>{slots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label></div><fieldset className="import-days"><legend>Days to import</legend>{availableImportDays.map((day) => <label key={day}><input type="checkbox" checked={importDays.includes(day)} onChange={() => toggleImportDay(day)} /><span><strong>{dayName[day]}</strong><small>{pendingImport.schedules[importSourceSlot]?.[day]?.length ?? 0} activities</small></span></label>)}</fieldset><div className="import-options">{pendingImport.weekOf && <label><input type="checkbox" checked={applyImportWeek} onChange={(event) => setApplyImportWeek(event.target.checked)} />Use imported week date <strong>{pendingImport.weekOf}</strong></label>}{pendingImport.meta && <label><input type="checkbox" checked={applyImportMeta} onChange={(event) => setApplyImportMeta(event.target.checked)} />Apply the imported weekly brief</label>}</div></>}<div className="drawer-actions"><button type="button" onClick={() => setPendingImport(null)}>Cancel</button><button className="primary" type="button" disabled={!restoreFullBackup && importDays.length === 0} onClick={applySelectedImport}>{restoreFullBackup ? "Restore backup" : `Import ${importDays.length} day${importDays.length === 1 ? "" : "s"}`}</button></div></section></div>}

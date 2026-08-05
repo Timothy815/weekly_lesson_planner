@@ -6,6 +6,8 @@ An editable lesson planner for three daily 90-minute cybersecurity class slots. 
 
 Use **Day view** in the planner controls, then select an active school day. Each class slot keeps its own learning objective for every day. The larger daily layout can be edited normally or expanded with **Enter full screen** for classroom projection.
 
+Use **Slot times** to enter the real start time for each of the three 90-minute class slots. Activity cards, printable plans, and readable Markdown then show real clock ranges calculated from the selected slot’s start time. The slot times remain in place when starting a new week or restoring the routine template.
+
 ## Edit and display modes
 
 - **Edit** shows editable day-header subtitles, suggested outcomes, objective fields, completion controls, activity editors, and drag handles.
@@ -41,7 +43,7 @@ Clearing browser data can erase the local copy, so keep periodic JSON exports or
 
 ## Google Drive week archive
 
-In Chrome or Edge, open **Archive**, choose **Connect archive folder**, and select the **Weekly Lesson Planner Archive** folder inside Google Drive for desktop. Use **Archive current week** to create a timestamped JSON snapshot. The archive lists saved weeks with restore and delete controls.
+In Chrome or Edge, open **Archive**, choose **Connect archive folder**, and select the **Weekly Lesson Planner Archive** folder inside Google Drive for desktop. Enter an archive title, then use **Archive current week** to create a timestamped JSON snapshot whose filename includes that title. The archive lists saved weeks with rename, restore, and delete controls. Older archive files without titles receive a sensible title based on their topic or week date.
 
 The folder connection is remembered for convenience, while the archive files themselves remain in Google Drive. If browser data is cleared or permission expires, open **Archive**, reconnect the same folder, and the saved-week list will be rebuilt from those files. Browsers without folder access retain the normal **Download JSON backup** fallback.
 
