@@ -4,19 +4,21 @@ An editable lesson planner for three daily 90-minute cybersecurity class slots. 
 
 ## Daily view
 
-Use **Day view** in the planner controls, then select an active school day. Each class slot keeps its own learning objective for every day. Activities appear as one chronological, full-width vertical sequence. The larger daily layout can be edited normally or expanded with **Enter full screen** for classroom projection.
+Use **Day view** in the planner controls, then select an active school day. Each class slot keeps its own learning objective, desired outcome, and daily product for every day. Activities appear as one chronological, full-width vertical sequence. The larger daily layout can be edited normally or expanded with **Enter full screen** for classroom projection.
 
 Use **Slot times** to enter the real start time for each of the three class slots. The app automatically projects and displays the end time 90 minutes later. Slot tabs, status information, activity cards, printable plans, and readable Markdown show the complete clock window. Activity ranges still follow their actual accumulated durations, including plans that run over 90 minutes. The slot times remain in place when starting a new week or restoring the routine template.
 
+In Display mode, the selected day’s activity matching the current clock time is highlighted when its calendar date and slot start time match. Turn on **Cues** in the Day View toolbar for a gentle two-note reminder at activity transitions. Sound cues are optional, off by default, and last only for the current browser session.
+
 ## Edit and display modes
 
-- **Edit** shows editable day-header subtitles, suggested outcomes, objective fields, completion controls, activity editors, and drag handles.
-- **Display** turns day headers, outcomes, objectives, and activities into polished read-only classroom cards while keeping resource links available.
+- **Edit** shows editable day-header subtitles, desired outcomes, daily products, objective fields, completion controls, activity editors, and drag handles.
+- **Display** turns day headers, outcomes, products, objectives, and activities into polished read-only classroom cards while keeping resource links available.
 - Fullscreen presentation automatically uses the display treatment.
 
 Use **Undo** and **Redo** in the planner controls to reverse or reapply planner changes. Keyboard shortcuts are also supported: `Ctrl/Command+Z` to undo and `Ctrl/Command+Shift+Z` (or `Ctrl+Y`) to redo. The history covers typing, imports, restores, activity moves, and complete-day swaps for the current browser session.
 
-In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their header subtitle, suggested outcome, and learning objective—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
+In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their header subtitle, desired outcome, daily product, and learning objective—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
 
 ## Finish a day and move into next week
 
