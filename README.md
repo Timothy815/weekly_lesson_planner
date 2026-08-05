@@ -10,6 +10,8 @@ Use **Slot times** to enter the real start time for each of the three class slot
 
 In Display mode, the selected day’s activity matching the current clock time is highlighted when its calendar date and slot start time match. Turn on **Cues** in the Day View toolbar for a gentle two-note reminder at activity transitions. Sound cues are optional, off by default, and last only for the current browser session.
 
+Daily PDF printing uses a compact portrait layout designed to keep a standard 90-minute plan, its heading, and its Daily Product together on one page. The full-week schedule and generated Weekly Summary retain their wider report layouts.
+
 ## Edit and display modes
 
 - **Edit** shows editable day-header subtitles, desired outcomes, daily products, objective fields, completion controls, activity editors, and drag handles.
