@@ -22,6 +22,12 @@ Use **Finish day** to record what happened in a class slot. Choose any unfinishe
 
 Use **Start next week** to advance the calendar by seven days. The new week can carry unfinished activities into the first school day, copy the current week’s complete structure with fresh completion states, or begin from the routine template. The weekly brief can be carried forward separately. When the Google Drive archive folder is connected, the current week is archived automatically before the transition; if archiving fails, the planner does not replace the current week. The transition can also be undone during the current session.
 
+## Reusable lesson library
+
+Open **Library** to search and reuse saved activities, complete day plans, and complete week structures. Set a target class slot and day before inserting an activity or applying a saved day. Activity editors include **Save to library**, every day column includes **Save day**, and the library manager can capture the current week. Reused activities receive fresh IDs and completion states. Replacing a day or week requires confirmation and remains undoable.
+
+The reusable library is part of the planner’s durable data. It is preserved when starting a new week or restoring the routine template, included in JSON exports and Google Drive week archives, and merged safely when a complete backup or archived week is restored.
+
 ## Local and portable data
 
 The planner saves automatically in the browser. Each browser and computer has its own local copy.

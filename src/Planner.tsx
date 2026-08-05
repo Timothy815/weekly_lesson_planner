@@ -22,6 +22,15 @@ type WeekMeta = {
   video: string; mentalModel: string; pythonConnection: string; primaryLab: string;
   evidence: string; synthesisQuestion: string; misconceptions: string; scaffolding: string; extension: string;
 };
+type LibraryActivity = { id: string; kind: "activity"; name: string; createdAt: string; segment: Segment };
+type LibraryDay = { id: string; kind: "day"; name: string; createdAt: string; objective: string; details: DayDetails; segments: Segment[] };
+type LibraryWeek = {
+  id: string; kind: "week"; name: string; createdAt: string; activeDays: Day[]; meta: WeekMeta;
+  schedules: Record<Slot, Record<Day, Segment[]>>;
+  dailyObjectives: Record<Slot, Record<Day, string>>;
+  dailyDetails: Record<Slot, Record<Day, DayDetails>>;
+};
+type LibraryItem = LibraryActivity | LibraryDay | LibraryWeek;
 type Planner = {
   schemaVersion: 1;
   weekOf: string;
@@ -31,6 +40,7 @@ type Planner = {
   dailyObjectives: Record<Slot, Record<Day, string>>;
   dailyDetails: Record<Slot, Record<Day, DayDetails>>;
   teachingRecords: Record<Slot, Partial<Record<Day, TeachingRecord>>>;
+  library: LibraryItem[];
 };
 type ImportCandidate = {
   filename: string;
@@ -147,17 +157,20 @@ function freshObjectives(): Record<Day, string> {
 function freshDetails(): Record<Day, DayDetails> {
   return Object.fromEntries(days.map((day) => [day, { focus: dayInfo[day].focus, outcome: dayInfo[day].outcome }])) as Record<Day, DayDetails>;
 }
+function blankMeta(): WeekMeta {
+  return Object.fromEntries(["topic", "centralQuestion", "certificationObjectives", "article", "video", "mentalModel", "pythonConnection", "primaryLab", "evidence", "synthesisQuestion", "misconceptions", "scaffolding", "extension"].map((key) => [key, ""])) as WeekMeta;
+}
 function defaultPlanner(): Planner {
-  const meta = Object.fromEntries(["topic", "centralQuestion", "certificationObjectives", "article", "video", "mentalModel", "pythonConnection", "primaryLab", "evidence", "synthesisQuestion", "misconceptions", "scaffolding", "extension"].map((key) => [key, ""])) as WeekMeta;
   return {
     schemaVersion: 1,
     weekOf: currentMonday(),
     activeDays: [...days],
-    meta,
+    meta: blankMeta(),
     schedules: { slot1: freshSchedule(), slot2: freshSchedule(), slot3: freshSchedule() },
     dailyObjectives: { slot1: freshObjectives(), slot2: freshObjectives(), slot3: freshObjectives() },
     dailyDetails: { slot1: freshDetails(), slot2: freshDetails(), slot3: freshDetails() },
     teachingRecords: { slot1: {}, slot2: {}, slot3: {} },
+    library: [],
   };
 }
 function isPlanner(value: unknown): boolean {
@@ -174,7 +187,8 @@ function isPlanner(value: unknown): boolean {
     && slots.every((slot) => days.every((day) => Array.isArray(candidate.schedules?.[slot]?.[day])))
     && (!candidate.dailyObjectives || slots.every((slot) => days.every((day) => typeof candidate.dailyObjectives?.[slot]?.[day] === "string")))
     && (!candidate.dailyDetails || slots.every((slot) => days.every((day) => typeof candidate.dailyDetails?.[slot]?.[day]?.focus === "string" && typeof candidate.dailyDetails?.[slot]?.[day]?.outcome === "string")))
-    && (!candidate.teachingRecords || slots.every((slot) => candidate.teachingRecords?.[slot] && typeof candidate.teachingRecords[slot] === "object"));
+    && (!candidate.teachingRecords || slots.every((slot) => candidate.teachingRecords?.[slot] && typeof candidate.teachingRecords[slot] === "object"))
+    && (!candidate.library || Array.isArray(candidate.library));
 }
 function normalizeResources(value: unknown): ResourceLink[] {
   if (!Array.isArray(value)) return [];
@@ -218,8 +232,47 @@ function normalizeTeachingRecord(value: unknown, day: Day): TeachingRecord | nul
     },
   };
 }
+function normalizeLibraryItem(value: unknown): LibraryItem | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<LibraryItem> & Record<string, unknown>;
+  if (typeof candidate.id !== "string" || typeof candidate.name !== "string" || typeof candidate.createdAt !== "string") return null;
+  const base = { id: candidate.id, name: candidate.name, createdAt: candidate.createdAt };
+  if (candidate.kind === "activity") {
+    return { ...base, kind: "activity", segment: { ...normalizeSegment(candidate.segment), completed: false } };
+  }
+  if (candidate.kind === "day") {
+    const details = candidate.details as Partial<DayDetails> | undefined;
+    return {
+      ...base,
+      kind: "day",
+      objective: typeof candidate.objective === "string" ? candidate.objective : "",
+      details: { focus: typeof details?.focus === "string" ? details.focus : "Daily focus", outcome: typeof details?.outcome === "string" ? details.outcome : "" },
+      segments: Array.isArray(candidate.segments) ? candidate.segments.map((item) => ({ ...normalizeSegment(item), completed: false })) : [],
+    };
+  }
+  if (candidate.kind === "week") {
+    const sourceSchedules = candidate.schedules as LibraryWeek["schedules"] | undefined;
+    if (!sourceSchedules || !slots.every((slot) => days.every((day) => Array.isArray(sourceSchedules[slot]?.[day])))) return null;
+    const sourceObjectives = candidate.dailyObjectives as Partial<LibraryWeek["dailyObjectives"]> | undefined;
+    const sourceDetails = candidate.dailyDetails as Partial<LibraryWeek["dailyDetails"]> | undefined;
+    const activeDays = Array.isArray(candidate.activeDays) ? days.filter((day) => candidate.activeDays?.includes(day)) : [...days];
+    return {
+      ...base,
+      kind: "week",
+      activeDays: activeDays.length ? activeDays : [...days],
+      meta: { ...blankMeta(), ...normalizeMeta(candidate.meta) },
+      schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, sourceSchedules[slot][day].map((item) => ({ ...normalizeSegment(item), completed: false }))]))])) as LibraryWeek["schedules"],
+      dailyObjectives: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, typeof sourceObjectives?.[slot]?.[day] === "string" ? sourceObjectives[slot]![day] : ""]))])) as LibraryWeek["dailyObjectives"],
+      dailyDetails: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, {
+        focus: typeof sourceDetails?.[slot]?.[day]?.focus === "string" ? sourceDetails[slot]![day].focus : dayInfo[day].focus,
+        outcome: typeof sourceDetails?.[slot]?.[day]?.outcome === "string" ? sourceDetails[slot]![day].outcome : dayInfo[day].outcome,
+      }]))])) as LibraryWeek["dailyDetails"],
+    };
+  }
+  return null;
+}
 function normalizePlanner(input: unknown): Planner {
-  const value = input as Omit<Planner, "dailyObjectives" | "dailyDetails" | "teachingRecords"> & { dailyObjectives?: Planner["dailyObjectives"]; dailyDetails?: Planner["dailyDetails"]; teachingRecords?: Planner["teachingRecords"] };
+  const value = input as Omit<Planner, "dailyObjectives" | "dailyDetails" | "teachingRecords" | "library"> & { dailyObjectives?: Planner["dailyObjectives"]; dailyDetails?: Planner["dailyDetails"]; teachingRecords?: Planner["teachingRecords"]; library?: unknown[] };
   return {
     ...value,
     schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.schedules[slot][day].map(normalizeSegment)]))])) as Planner["schedules"],
@@ -232,6 +285,10 @@ function normalizePlanner(input: unknown): Planner {
       const record = normalizeTeachingRecord(value.teachingRecords?.[slot]?.[day], day);
       return record ? [[day, record]] : [];
     }))])) as Planner["teachingRecords"],
+    library: Array.isArray(value.library) ? value.library.flatMap((item) => {
+      const normalized = normalizeLibraryItem(item);
+      return normalized ? [normalized] : [];
+    }) : [],
   };
 }
 function isArchiveDocument(value: unknown): value is ArchiveDocument {
@@ -386,6 +443,11 @@ export default function Home() {
   const [nextWeekOpen, setNextWeekOpen] = useState(false);
   const [nextWeekMode, setNextWeekMode] = useState<"unfinished" | "copy" | "fresh">("unfinished");
   const [carryWeeklyBrief, setCarryWeeklyBrief] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryFilter, setLibraryFilter] = useState<"all" | LibraryItem["kind"]>("all");
+  const [libraryTargetSlot, setLibraryTargetSlot] = useState<Slot>("slot1");
+  const [libraryTargetDay, setLibraryTargetDay] = useState<Day>("monday");
   const importInput = useRef<HTMLInputElement>(null);
   const dragSource = useRef<{ slot: Slot; day: Day; id: string } | null>(null);
   const dayDragSource = useRef<Day | null>(null);
@@ -479,6 +541,15 @@ export default function Home() {
   const finishLaterDays = activeDays.slice(activeDays.indexOf(finishDay) + 1);
   const finishRecord = planner.teachingRecords[activeSlot][finishDay];
   const unfinishedWeekCount = slots.reduce((count, slot) => count + activeDays.reduce((dayCount, day) => dayCount + planner.schedules[slot][day].filter((item) => !item.completed).length, 0), 0);
+  const libraryQuery = librarySearch.trim().toLowerCase();
+  const filteredLibrary = planner.library.filter((item) => {
+    if (libraryFilter !== "all" && item.kind !== libraryFilter) return false;
+    if (!libraryQuery) return true;
+    const searchable = item.kind === "activity" ? `${item.name} ${item.segment.title} ${item.segment.notes} ${item.segment.category}`
+      : item.kind === "day" ? `${item.name} ${item.objective} ${item.details.focus} ${item.details.outcome} ${item.segments.map((segment) => `${segment.title} ${segment.notes}`).join(" ")}`
+      : `${item.name} ${item.meta.topic} ${item.meta.centralQuestion} ${item.meta.certificationObjectives}`;
+    return searchable.toLowerCase().includes(libraryQuery);
+  });
   const weekLabel = useMemo(() => {
     const date = new Date(`${planner.weekOf}T12:00:00`);
     return Number.isNaN(date.getTime()) ? "Unscheduled week" : `Week of ${date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
@@ -546,6 +617,93 @@ export default function Home() {
   function removeResource(index: number) {
     if (!editing || !selected) return;
     updateSegment(editing.day, editing.id, { resources: selected.resources.filter((_, resourceIndex) => resourceIndex !== index) }, editing.slot);
+  }
+  function openLibraryManager() {
+    const targetDay = activeDays.includes(selectedDay) ? selectedDay : activeDays[0];
+    setLibraryTargetSlot(activeSlot);
+    setLibraryTargetDay(targetDay);
+    setLibraryOpen(true);
+  }
+  function saveSelectedActivityToLibrary() {
+    if (!selected) return;
+    const item: LibraryActivity = {
+      id: uid(), kind: "activity", name: selected.title || "Untitled activity", createdAt: new Date().toISOString(),
+      segment: { ...selected, id: uid(), completed: false, resources: selected.resources.map((resource) => ({ ...resource })) },
+    };
+    changePlanner((current) => ({ ...current, library: [item, ...current.library] }));
+    setNotice(`Saved “${item.name}” to the activity library.`);
+  }
+  function saveCurrentDayToLibrary(sourceDay?: Day, sourceSlot = activeSlot) {
+    const day = sourceDay ?? (activeDays.includes(selectedDay) ? selectedDay : activeDays[0]);
+    const details = planner.dailyDetails[sourceSlot][day];
+    const item: LibraryDay = {
+      id: uid(), kind: "day", name: `${details.focus || dayName[day]} · ${slotName[sourceSlot]}`, createdAt: new Date().toISOString(),
+      objective: planner.dailyObjectives[sourceSlot][day], details: { ...details },
+      segments: planner.schedules[sourceSlot][day].map((segment) => ({ ...segment, id: uid(), completed: false, resources: segment.resources.map((resource) => ({ ...resource })) })),
+    };
+    changePlanner((current) => ({ ...current, library: [item, ...current.library] }));
+    setNotice(`Saved the ${dayName[day]} plan to the reusable library.`);
+  }
+  function saveCurrentWeekToLibrary() {
+    const item: LibraryWeek = {
+      id: uid(), kind: "week", name: planner.meta.topic || weekLabel, createdAt: new Date().toISOString(), activeDays: [...planner.activeDays], meta: { ...planner.meta },
+      schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, planner.schedules[slot][day].map((segment) => ({ ...segment, id: uid(), completed: false, resources: segment.resources.map((resource) => ({ ...resource })) }))]))])) as LibraryWeek["schedules"],
+      dailyObjectives: structuredClone(planner.dailyObjectives), dailyDetails: structuredClone(planner.dailyDetails),
+    };
+    changePlanner((current) => ({ ...current, library: [item, ...current.library] }));
+    setNotice(`Saved “${item.name}” as a reusable week structure.`);
+  }
+  function useLibraryItem(item: LibraryItem) {
+    if (item.kind === "activity") {
+      const segment = { ...item.segment, id: uid(), completed: false, resources: item.segment.resources.map((resource) => ({ ...resource })) };
+      changePlanner((current) => ({ ...current, schedules: { ...current.schedules, [libraryTargetSlot]: { ...current.schedules[libraryTargetSlot], [libraryTargetDay]: [...current.schedules[libraryTargetSlot][libraryTargetDay], segment] } } }));
+      setActiveSlot(libraryTargetSlot);
+      setSelectedDay(libraryTargetDay);
+      setNotice(`Added “${item.name}” to ${dayName[libraryTargetDay]} in ${slotName[libraryTargetSlot]}.`);
+      return;
+    }
+    if (item.kind === "day") {
+      if (!confirm(`Replace ${dayName[libraryTargetDay]} in ${slotName[libraryTargetSlot]} with the saved day “${item.name}”?`)) return;
+      changePlanner((current) => {
+        const records = { ...current.teachingRecords[libraryTargetSlot] };
+        delete records[libraryTargetDay];
+        return {
+          ...current,
+          schedules: { ...current.schedules, [libraryTargetSlot]: { ...current.schedules[libraryTargetSlot], [libraryTargetDay]: item.segments.map((segment) => ({ ...segment, id: uid(), completed: false, resources: segment.resources.map((resource) => ({ ...resource })) })) } },
+          dailyObjectives: { ...current.dailyObjectives, [libraryTargetSlot]: { ...current.dailyObjectives[libraryTargetSlot], [libraryTargetDay]: item.objective } },
+          dailyDetails: { ...current.dailyDetails, [libraryTargetSlot]: { ...current.dailyDetails[libraryTargetSlot], [libraryTargetDay]: { ...item.details } } },
+          teachingRecords: { ...current.teachingRecords, [libraryTargetSlot]: records },
+        };
+      });
+      setActiveSlot(libraryTargetSlot);
+      showDay(libraryTargetDay);
+      setLibraryOpen(false);
+      setNotice(`Applied “${item.name}” to ${dayName[libraryTargetDay]} in ${slotName[libraryTargetSlot]}.`);
+      return;
+    }
+    if (!confirm(`Replace the current week’s brief and all three class schedules with “${item.name}”?\n\nThe current calendar date and reusable library will be preserved.`)) return;
+    changePlanner((current) => ({
+      ...current,
+      activeDays: [...item.activeDays], meta: { ...item.meta },
+      schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, item.schedules[slot][day].map((segment) => ({ ...segment, id: uid(), completed: false, resources: segment.resources.map((resource) => ({ ...resource })) }))]))])) as Planner["schedules"],
+      dailyObjectives: structuredClone(item.dailyObjectives), dailyDetails: structuredClone(item.dailyDetails), teachingRecords: { slot1: {}, slot2: {}, slot3: {} },
+    }));
+    setSelectedDay(item.activeDays[0]);
+    setPrintDay(item.activeDays[0]);
+    setViewMode("week");
+    setLibraryOpen(false);
+    setNotice(`Applied the reusable week “${item.name}”.`);
+  }
+  function deleteLibraryItem(item: LibraryItem) {
+    if (!confirm(`Delete “${item.name}” from the reusable library?`)) return;
+    changePlanner((current) => ({ ...current, library: current.library.filter((candidate) => candidate.id !== item.id) }));
+    setNotice(`Removed “${item.name}” from the reusable library. Undo is available.`);
+  }
+  function renameLibraryItem(item: LibraryItem) {
+    const name = prompt("Name this reusable library item:", item.name)?.trim();
+    if (!name || name === item.name) return;
+    changePlanner((current) => ({ ...current, library: current.library.map((candidate) => candidate.id === item.id ? { ...candidate, name } : candidate) }));
+    setNotice(`Renamed the library item to “${name}”.`);
   }
   function moveSelectedToDay(targetDay: Day) {
     if (!editing || !selected || targetDay === editing.day) return;
@@ -792,6 +950,7 @@ export default function Home() {
     }
     if (carryWeeklyBrief) next.meta = { ...planner.meta };
     else if (nextWeekMode === "copy") next.meta = { ...defaultPlanner().meta };
+    next.library = structuredClone(planner.library);
     changePlanner(next);
     setSelectedDay(next.activeDays[0]);
     setPrintDay(next.activeDays[0]);
@@ -804,6 +963,8 @@ export default function Home() {
     const topic = entry.planner.meta.topic || `week of ${entry.planner.weekOf}`;
     if (!confirm(`Replace the current planner with the archived plan “${topic}”?\n\nThe current week will remain only if you archive or export it first.`)) return;
     const restored = normalizePlanner(entry.planner);
+    const currentIds = new Set(planner.library.map((item) => item.id));
+    restored.library = [...planner.library, ...restored.library.filter((item) => !currentIds.has(item.id))];
     changePlanner(restored);
     setSelectedDay(restored.activeDays[0]);
     setPrintDay(restored.activeDays[0]);
@@ -910,7 +1071,10 @@ export default function Home() {
   function applySelectedImport() {
     if (!pendingImport) return;
     if (restoreFullBackup && pendingImport.backup) {
-      changePlanner(pendingImport.backup);
+      const backup = normalizePlanner(pendingImport.backup);
+      const currentIds = new Set(planner.library.map((item) => item.id));
+      backup.library = [...planner.library, ...backup.library.filter((item) => !currentIds.has(item.id))];
+      changePlanner(backup);
       setPendingImport(null);
       setEditing(null);
       setNotice(`Restored the complete backup from ${pendingImport.filename}.`);
@@ -952,7 +1116,7 @@ export default function Home() {
   }
   function restoreTemplate() {
     if (!confirm("Replace this entire week with a fresh routine template? Export JSON first if you may need this plan later.")) return;
-    const fresh = defaultPlanner(); fresh.weekOf = planner.weekOf; changePlanner(fresh); setEditing(null); setNotice("The routine template was restored for all three slots.");
+    const fresh = defaultPlanner(); fresh.weekOf = planner.weekOf; fresh.library = structuredClone(planner.library); changePlanner(fresh); setEditing(null); setNotice("The routine template was restored for all three slots. Your reusable library was preserved.");
   }
 
   const metaFields: [keyof WeekMeta, string, string][] = [
@@ -998,6 +1162,7 @@ export default function Home() {
           <button type="button" className={viewMode === "day" ? "active" : ""} aria-pressed={viewMode === "day"} onClick={() => showDay(activeDays.includes(selectedDay) ? selectedDay : activeDays[0])}>Day view</button>
         </div>
         <button type="button" onClick={() => setArchiveOpen(true)}>Archive <span>{archiveEntries.length || ""}</span></button>
+        <button type="button" onClick={openLibraryManager}>Library <span>{planner.library.length || ""}</span></button>
         {!displayMode && <><button type="button" onClick={() => setDaysOpen((open) => !open)}>School days <span>{activeDays.length}/5</span></button>
         <button className="finish-day-action" type="button" onClick={() => openFinishDay()}>Finish day</button>
         <button type="button" onClick={() => setNextWeekOpen(true)}>Start next week</button>
@@ -1050,13 +1215,23 @@ export default function Home() {
                 <div className="segment-main">{!displayMode && <label className="complete-check"><input type="checkbox" checked={item.completed} onChange={(event) => updateSegment(day, item.id, { completed: event.target.checked })} /><span aria-hidden="true">✓</span><span className="sr-only">Mark {item.title} complete</span></label>}{displayMode ? <div className="segment-copy segment-display-copy">{activityCopy}</div> : <button className="segment-copy" type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })}>{activityCopy}</button>}{!displayMode && <div className="card-movers screen-only"><button type="button" disabled={index === 0} onClick={() => reorder(day, item.id, -1)} aria-label="Move earlier">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => reorder(day, item.id, 1)} aria-label="Move later">↓</button><button type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })} aria-label="Edit segment">•••</button></div>}{item.resources.some((resource) => safeHref(resource.url)) && <div className="segment-resources">{item.resources.map((resource, resourceIndex) => { const href = safeHref(resource.url); return href ? <a key={`${resource.url}-${resourceIndex}`} href={href} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>↗ {resource.label || "Open resource"}</a> : null; })}</div>}</div>
               </div>;
             })}</div>
-            {!displayMode && <button className="add-segment screen-only" type="button" onClick={() => addSegment(day)}>＋ Add segment</button>}<footer><span>Daily product</span><p>{dayInfo[day].product}</p></footer>
+            {!displayMode && <div className="day-edit-actions screen-only"><button className="add-segment" type="button" onClick={() => addSegment(day)}>＋ Add segment</button><button type="button" onClick={() => saveCurrentDayToLibrary(day)}>Save day</button></div>}<footer><span>Daily product</span><p>{dayInfo[day].product}</p></footer>
           </article>;
         })}
       </div>
     </section>
 
     <section className="weekly-notes"><div><span>Certification objectives</span><p>{planner.meta.certificationObjectives || "Not specified."}</p></div><div><span>Required evidence</span><p>{planner.meta.evidence || "Not specified."}</p></div><div><span>Friday synthesis question</span><p>{planner.meta.synthesisQuestion || "Not specified."}</p></div><div><span>Likely misconceptions</span><p>{planner.meta.misconceptions || "Not specified."}</p></div></section>
+
+    {libraryOpen && <div className="modal-backdrop library-backdrop screen-only" onMouseDown={() => setLibraryOpen(false)}><section className="drawer library-drawer" role="dialog" aria-modal="true" aria-labelledby="library-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Reusable teaching assets // {planner.library.length} saved</p><h2 id="library-title">Lesson library</h2></div><button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close">×</button></div>
+      <section className="library-target"><div><label><span>Target class</span><select value={libraryTargetSlot} onChange={(event) => setLibraryTargetSlot(event.target.value as Slot)}>{slots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label><label><span>Target day</span><select value={libraryTargetDay} onChange={(event) => setLibraryTargetDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select></label></div><p>Activities are added to this target. Saved days replace this target after confirmation.</p></section>
+      <div className="library-save-actions"><button type="button" onClick={() => saveCurrentDayToLibrary(libraryTargetDay, libraryTargetSlot)}>＋ Save target day</button><button type="button" onClick={saveCurrentWeekToLibrary}>＋ Save current week</button><span>Save an individual activity from its editor.</span></div>
+      <div className="library-tools"><label><span className="sr-only">Search library</span><input type="search" value={librarySearch} placeholder="Search titles, notes, topics, or categories…" onChange={(event) => setLibrarySearch(event.target.value)} /></label><div>{(["all", "activity", "day", "week"] as const).map((filter) => <button key={filter} type="button" className={libraryFilter === filter ? "active" : ""} onClick={() => setLibraryFilter(filter)}>{filter === "all" ? "All" : `${filter[0].toUpperCase()}${filter.slice(1)}s`}</button>)}</div></div>
+      <div className="library-list">{filteredLibrary.length === 0 ? <div className="library-empty"><strong>{planner.library.length ? "No saved items match this search." : "Your reusable library is empty."}</strong><p>Save an activity from its editor, save a day from its column, or capture the complete current week above.</p></div> : filteredLibrary.map((item) => {
+        const detail = item.kind === "activity" ? `${item.segment.minutes} min · ${item.segment.category} · ${item.segment.resources.length} link${item.segment.resources.length === 1 ? "" : "s"}` : item.kind === "day" ? `${item.segments.length} activities · ${item.segments.reduce((total, segment) => total + segment.minutes, 0)} min` : `${item.activeDays.length}-day week · ${slots.reduce((total, slot) => total + item.activeDays.reduce((count, day) => count + item.schedules[slot][day].length, 0), 0)} activities across 3 slots`;
+        return <article className={`library-card kind-${item.kind}`} key={item.id}><div><span>{item.kind}</span><h3>{item.name}</h3><p>{detail}</p><small>Saved {formatArchiveDate(item.createdAt)}</small></div><div><button className="primary" type="button" onClick={() => useLibraryItem(item)}>{item.kind === "activity" ? "Add to day" : item.kind === "day" ? "Use this day" : "Use this week"}</button><button type="button" onClick={() => renameLibraryItem(item)}>Rename</button><button className="danger" type="button" onClick={() => deleteLibraryItem(item)}>Delete</button></div></article>;
+      })}</div>
+    </section></div>}
 
     {finishOpen && <div className="modal-backdrop workflow-backdrop screen-only" onMouseDown={() => setFinishOpen(false)}><section className="drawer workflow-drawer" role="dialog" aria-modal="true" aria-labelledby="finish-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">End-of-class workflow // {slotName[activeSlot]}</p><h2 id="finish-title">Finish the day</h2></div><button type="button" onClick={() => setFinishOpen(false)} aria-label="Close">×</button></div>
       <div className="workflow-routing"><label><span>Day to record</span><select value={finishDay} onChange={(event) => changeFinishDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]} · {dateForDay(planner.weekOf, day)}</option>)}</select></label><div><span>Completion</span><strong>{planner.schedules[activeSlot][finishDay].filter((item) => item.completed).length} of {planner.schedules[activeSlot][finishDay].length} activities marked complete</strong></div></div>
@@ -1085,6 +1260,6 @@ export default function Home() {
 
     {briefOpen && <div className="modal-backdrop screen-only" onMouseDown={() => setBriefOpen(false)}><section className="drawer weekly-drawer" role="dialog" aria-modal="true" aria-labelledby="brief-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Planning dossier</p><h2 id="brief-title">Weekly brief</h2></div><button type="button" onClick={() => setBriefOpen(false)} aria-label="Close">×</button></div><div className="field-grid">{metaFields.map(([key, label, placeholder]) => <label key={key} className={key === "topic" || key === "centralQuestion" ? "wide" : ""}><span>{label}</span><textarea rows={key === "topic" ? 2 : 3} value={planner.meta[key]} placeholder={placeholder} onChange={(event) => updateMeta(key, event.target.value)} /></label>)}</div><div className="drawer-actions"><button className="primary" type="button" onClick={() => setBriefOpen(false)}>Done</button></div></section></div>}
 
-    {editing && selected && <div className="modal-backdrop screen-only" onMouseDown={() => setEditing(null)}><section className="drawer segment-drawer" role="dialog" aria-modal="true" aria-labelledby="segment-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">{dayName[editing.day]} // {slotName[editing.slot]}</p><h2 id="segment-title">Edit segment</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close">×</button></div><label><span>Activity title</span><input value={selected.title} onChange={(event) => updateSegment(editing.day, editing.id, { title: event.target.value }, editing.slot)} /></label><div className="split-fields"><label><span>Minutes</span><input type="number" min="1" max="180" value={selected.minutes} onChange={(event) => updateSegment(editing.day, editing.id, { minutes: Math.max(1, Number(event.target.value) || 1) }, editing.slot)} /></label><label><span>Category</span><select value={selected.category} onChange={(event) => updateSegment(editing.day, editing.id, { category: event.target.value as Category }, editing.slot)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><label><span>Purpose and teacher notes</span><textarea rows={7} value={selected.notes} onChange={(event) => updateSegment(editing.day, editing.id, { notes: event.target.value }, editing.slot)} /></label><label className="move-day-field"><span>Scheduled day</span><select value={editing.day} onChange={(event) => moveSelectedToDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select><small>Useful on touch devices when dragging is inconvenient.</small></label><section className="resource-editor"><div><span>Activity links</span><button type="button" onClick={addResource}>＋ Add link</button></div>{selected.resources.length === 0 && <p>Add websites, documents, videos, or other resources students can open from this card.</p>}{selected.resources.map((resource, index) => <div className="resource-row" key={index}><label><span>Link label</span><input value={resource.label} placeholder="Lab instructions" onChange={(event) => updateResource(index, { label: event.target.value })} /></label><label><span>Web address</span><input type="url" value={resource.url} placeholder="https://…" onChange={(event) => updateResource(index, { url: event.target.value })} /></label><button type="button" onClick={() => removeResource(index)} aria-label={`Remove ${resource.label || "link"}`}>×</button></div>)}</section><label className="completion-row"><input type="checkbox" checked={selected.completed} onChange={(event) => updateSegment(editing.day, editing.id, { completed: event.target.checked }, editing.slot)} />Completed as planned</label><div className="drawer-actions"><button className="danger" type="button" onClick={deleteSegment}>Delete</button><button className="primary" type="button" onClick={() => setEditing(null)}>Done</button></div></section></div>}
+    {editing && selected && <div className="modal-backdrop screen-only" onMouseDown={() => setEditing(null)}><section className="drawer segment-drawer" role="dialog" aria-modal="true" aria-labelledby="segment-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">{dayName[editing.day]} // {slotName[editing.slot]}</p><h2 id="segment-title">Edit segment</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close">×</button></div><label><span>Activity title</span><input value={selected.title} onChange={(event) => updateSegment(editing.day, editing.id, { title: event.target.value }, editing.slot)} /></label><div className="split-fields"><label><span>Minutes</span><input type="number" min="1" max="180" value={selected.minutes} onChange={(event) => updateSegment(editing.day, editing.id, { minutes: Math.max(1, Number(event.target.value) || 1) }, editing.slot)} /></label><label><span>Category</span><select value={selected.category} onChange={(event) => updateSegment(editing.day, editing.id, { category: event.target.value as Category }, editing.slot)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><label><span>Purpose and teacher notes</span><textarea rows={7} value={selected.notes} onChange={(event) => updateSegment(editing.day, editing.id, { notes: event.target.value }, editing.slot)} /></label><label className="move-day-field"><span>Scheduled day</span><select value={editing.day} onChange={(event) => moveSelectedToDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select><small>Useful on touch devices when dragging is inconvenient.</small></label><section className="resource-editor"><div><span>Activity links</span><button type="button" onClick={addResource}>＋ Add link</button></div>{selected.resources.length === 0 && <p>Add websites, documents, videos, or other resources students can open from this card.</p>}{selected.resources.map((resource, index) => <div className="resource-row" key={index}><label><span>Link label</span><input value={resource.label} placeholder="Lab instructions" onChange={(event) => updateResource(index, { label: event.target.value })} /></label><label><span>Web address</span><input type="url" value={resource.url} placeholder="https://…" onChange={(event) => updateResource(index, { url: event.target.value })} /></label><button type="button" onClick={() => removeResource(index)} aria-label={`Remove ${resource.label || "link"}`}>×</button></div>)}</section><label className="completion-row"><input type="checkbox" checked={selected.completed} onChange={(event) => updateSegment(editing.day, editing.id, { completed: event.target.checked }, editing.slot)} />Completed as planned</label><div className="drawer-actions"><button className="danger" type="button" onClick={deleteSegment}>Delete</button><button type="button" onClick={saveSelectedActivityToLibrary}>Save to library</button><button className="primary" type="button" onClick={() => setEditing(null)}>Done</button></div></section></div>}
   </main>;
 }
