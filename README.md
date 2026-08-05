@@ -23,7 +23,13 @@ The planner saves automatically in the browser. Each browser and computer has it
 - **Export readable Markdown** creates a human-readable archive.
 - The PDF commands open the browser print window; choose **Save as PDF**.
 
-Clearing browser data can erase the local copy, so keep periodic JSON exports.
+Clearing browser data can erase the local copy, so keep periodic JSON exports or use the folder-backed archive.
+
+## Google Drive week archive
+
+In Chrome or Edge, open **Archive**, choose **Connect archive folder**, and select the **Weekly Lesson Planner Archive** folder inside Google Drive for desktop. Use **Archive current week** to create a timestamped JSON snapshot. The archive lists saved weeks with restore and delete controls.
+
+The folder connection is remembered for convenience, while the archive files themselves remain in Google Drive. If browser data is cleared or permission expires, open **Archive**, reconnect the same folder, and the saved-week list will be rebuilt from those files. Browsers without folder access retain the normal **Download JSON backup** fallback.
 
 ## AI-assisted planning
 

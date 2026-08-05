@@ -30,8 +30,24 @@ type ImportCandidate = {
   objectives: Partial<Record<Slot, Partial<Record<Day, string>>>>;
   backup?: Planner;
 };
+type ArchiveDocument = { format: "weekly-lesson-planner-archive"; version: 1; archivedAt: string; planner: Planner };
+type ArchiveEntry = ArchiveDocument & { filename: string };
+type ArchiveStatus = "unsupported" | "disconnected" | "permission" | "connected" | "working" | "error";
+type DirectoryPermissionHandle = FileSystemDirectoryHandle & {
+  queryPermission?: (options: { mode: "readwrite" }) => Promise<PermissionState>;
+  requestPermission?: (options: { mode: "readwrite" }) => Promise<PermissionState>;
+};
+type IterableDirectoryHandle = FileSystemDirectoryHandle & {
+  values: () => AsyncIterableIterator<FileSystemFileHandle | FileSystemDirectoryHandle>;
+};
+type DirectoryPickerWindow = Window & {
+  showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<FileSystemDirectoryHandle>;
+};
 
 const STORAGE_KEY = "cybersecurity-weekly-planner-v1";
+const ARCHIVE_DB = "weekly-lesson-planner-archive-v1";
+const ARCHIVE_STORE = "connections";
+const ARCHIVE_HANDLE_KEY = "archive-folder";
 const days: Day[] = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 const slots: Slot[] = ["slot1", "slot2", "slot3"];
 const dayName: Record<Day, string> = { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" };
@@ -168,6 +184,50 @@ function normalizePlanner(input: unknown): Planner {
     dailyObjectives: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.dailyObjectives?.[slot]?.[day] ?? ""]))])) as Planner["dailyObjectives"],
   };
 }
+function isArchiveDocument(value: unknown): value is ArchiveDocument {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ArchiveDocument>;
+  return candidate.format === "weekly-lesson-planner-archive"
+    && candidate.version === 1
+    && typeof candidate.archivedAt === "string"
+    && isPlanner(candidate.planner);
+}
+function openArchiveDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(ARCHIVE_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(ARCHIVE_STORE)) request.result.createObjectStore(ARCHIVE_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function loadArchiveHandle(): Promise<FileSystemDirectoryHandle | null> {
+  const database = await openArchiveDatabase();
+  return new Promise((resolve, reject) => {
+    const request = database.transaction(ARCHIVE_STORE).objectStore(ARCHIVE_STORE).get(ARCHIVE_HANDLE_KEY);
+    request.onsuccess = () => { database.close(); resolve(request.result ?? null); };
+    request.onerror = () => { database.close(); reject(request.error); };
+  });
+}
+async function rememberArchiveHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  const database = await openArchiveDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(ARCHIVE_STORE, "readwrite");
+    transaction.objectStore(ARCHIVE_STORE).put(handle, ARCHIVE_HANDLE_KEY);
+    transaction.oncomplete = () => { database.close(); resolve(); };
+    transaction.onerror = () => { database.close(); reject(transaction.error); };
+  });
+}
+function archiveFilename(planner: Planner, archivedAt: string) {
+  const topic = planner.meta.topic.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "lesson-plan";
+  const timestamp = archivedAt.replace(/[:.]/g, "-");
+  return `${planner.weekOf || "undated"}--${topic}--${timestamp}.lesson-plan.json`;
+}
+function formatArchiveDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
 function safeHref(url: string) {
   const trimmed = url.trim();
   if (/^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed)) return trimmed;
@@ -249,6 +309,11 @@ export default function Home() {
   const [applyImportWeek, setApplyImportWeek] = useState(true);
   const [applyImportMeta, setApplyImportMeta] = useState(true);
   const [restoreFullBackup, setRestoreFullBackup] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveHandle, setArchiveHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
+  const [archiveStatus, setArchiveStatus] = useState<ArchiveStatus>("disconnected");
+  const [archiveMessage, setArchiveMessage] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   const dragSource = useRef<{ slot: Slot; day: Day; id: string } | null>(null);
   const dayDragSource = useRef<Day | null>(null);
@@ -285,6 +350,28 @@ export default function Home() {
     const syncPresentation = () => setPresenting(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", syncPresentation);
     return () => document.removeEventListener("fullscreenchange", syncPresentation);
+  }, []);
+
+  useEffect(() => {
+    if (!(window as DirectoryPickerWindow).showDirectoryPicker || !window.indexedDB) {
+      setArchiveStatus("unsupported");
+      return;
+    }
+    let active = true;
+    loadArchiveHandle().then(async (handle) => {
+      if (!active || !handle) return;
+      setArchiveHandle(handle);
+      const permission = await (handle as DirectoryPermissionHandle).queryPermission?.({ mode: "readwrite" });
+      if (!active) return;
+      if (permission === "granted") await scanArchiveFolder(handle);
+      else {
+        setArchiveStatus("permission");
+        setArchiveMessage(`Reconnect “${handle.name}” to read its saved weeks.`);
+      }
+    }).catch(() => {
+      if (active) setArchiveStatus("disconnected");
+    });
+    return () => { active = false; };
   }, []);
 
   const schedule = planner.schedules[activeSlot];
@@ -419,6 +506,97 @@ export default function Home() {
   function exportJson() {
     download(JSON.stringify(planner, null, 2), `cybersecurity-plan-${planner.weekOf || "undated"}.json`, "application/json");
     setNotice("Portable JSON copy downloaded.");
+  }
+  async function scanArchiveFolder(handle = archiveHandle) {
+    if (!handle) return;
+    setArchiveStatus("working");
+    setArchiveMessage("Scanning the archive folder…");
+    try {
+      const found: ArchiveEntry[] = [];
+      for await (const child of (handle as IterableDirectoryHandle).values()) {
+        if (child.kind !== "file" || !child.name.endsWith(".json")) continue;
+        try {
+          const file = await child.getFile();
+          const parsed: unknown = JSON.parse(await file.text());
+          if (isArchiveDocument(parsed)) {
+            found.push({ ...parsed, planner: normalizePlanner(parsed.planner), filename: child.name });
+          } else if (isPlanner(parsed)) {
+            found.push({ format: "weekly-lesson-planner-archive", version: 1, archivedAt: new Date(file.lastModified).toISOString(), planner: normalizePlanner(parsed), filename: child.name });
+          }
+        } catch {
+          // Ignore unrelated or malformed JSON files in the selected directory.
+        }
+      }
+      found.sort((left, right) => right.planner.weekOf.localeCompare(left.planner.weekOf) || right.archivedAt.localeCompare(left.archivedAt));
+      setArchiveEntries(found);
+      setArchiveStatus("connected");
+      setArchiveMessage(found.length ? `${found.length} archived week${found.length === 1 ? "" : "s"} found in “${handle.name}”.` : `“${handle.name}” is connected and ready for its first archived week.`);
+    } catch {
+      setArchiveStatus("permission");
+      setArchiveMessage(`Access to “${handle.name}” needs to be restored.`);
+    }
+  }
+  async function connectArchiveFolder(forcePicker = false) {
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+    if (!picker) { setArchiveStatus("unsupported"); return; }
+    try {
+      let handle = !forcePicker ? archiveHandle : null;
+      if (handle) {
+        const permissionHandle = handle as DirectoryPermissionHandle;
+        const currentPermission = await permissionHandle.queryPermission?.({ mode: "readwrite" });
+        const permission = currentPermission === "granted" ? currentPermission : await permissionHandle.requestPermission?.({ mode: "readwrite" });
+        if (permission !== "granted") handle = null;
+      }
+      if (!handle) handle = await picker({ id: "weekly-lesson-planner-archive", mode: "readwrite" });
+      setArchiveHandle(handle);
+      await rememberArchiveHandle(handle);
+      await scanArchiveFolder(handle);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setArchiveStatus("error");
+      setArchiveMessage("The folder could not be connected. Please try again and allow read/write access.");
+    }
+  }
+  async function archiveCurrentWeek() {
+    if (!archiveHandle) { await connectArchiveFolder(); return; }
+    setArchiveStatus("working");
+    setArchiveMessage("Saving this week to Google Drive…");
+    try {
+      const archivedAt = new Date().toISOString();
+      const filename = archiveFilename(planner, archivedAt);
+      const document: ArchiveDocument = { format: "weekly-lesson-planner-archive", version: 1, archivedAt, planner };
+      const fileHandle = await archiveHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(document, null, 2));
+      await writable.close();
+      await scanArchiveFolder(archiveHandle);
+      setNotice(`Archived ${weekLabel} in “${archiveHandle.name}”.`);
+    } catch {
+      setArchiveStatus("permission");
+      setArchiveMessage("The week was not saved. Reconnect the archive folder and try again.");
+    }
+  }
+  function restoreArchivedWeek(entry: ArchiveEntry) {
+    const topic = entry.planner.meta.topic || `week of ${entry.planner.weekOf}`;
+    if (!confirm(`Replace the current planner with the archived plan “${topic}”?\n\nThe current week will remain only if you archive or export it first.`)) return;
+    const restored = normalizePlanner(entry.planner);
+    setPlanner(restored);
+    setSelectedDay(restored.activeDays[0]);
+    setPrintDay(restored.activeDays[0]);
+    setEditing(null);
+    setArchiveOpen(false);
+    setNotice(`Restored the archived plan for ${restored.weekOf || "an undated week"}.`);
+  }
+  async function deleteArchivedWeek(entry: ArchiveEntry) {
+    if (!archiveHandle || !confirm(`Delete “${entry.filename}” from the archive folder?\n\nRecovery will depend on your Google Drive settings.`)) return;
+    try {
+      await archiveHandle.removeEntry(entry.filename);
+      await scanArchiveFolder(archiveHandle);
+      setNotice(`Removed ${entry.filename} from the archive folder.`);
+    } catch {
+      setArchiveStatus("error");
+      setArchiveMessage("That archive file could not be deleted. Refresh the folder and try again.");
+    }
   }
   function downloadAiTemplate(scope: "day" | "week") {
     const sampleSegment = (title: string) => ({
@@ -578,6 +756,7 @@ export default function Home() {
           <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => setViewMode("week")}>Full week</button>
           <button type="button" className={viewMode === "day" ? "active" : ""} aria-pressed={viewMode === "day"} onClick={() => showDay(activeDays.includes(selectedDay) ? selectedDay : activeDays[0])}>Day view</button>
         </div>
+        <button type="button" onClick={() => setArchiveOpen(true)}>Archive <span>{archiveEntries.length || ""}</span></button>
         {!displayMode && <><button type="button" onClick={() => setDaysOpen((open) => !open)}>School days <span>{activeDays.length}/5</span></button>
         <button type="button" onClick={() => setBriefOpen(true)}>Weekly brief</button>
         <button type="button" onClick={exportJson}>Export JSON</button>
@@ -634,6 +813,13 @@ export default function Home() {
     </section>
 
     <section className="weekly-notes"><div><span>Certification objectives</span><p>{planner.meta.certificationObjectives || "Not specified."}</p></div><div><span>Required evidence</span><p>{planner.meta.evidence || "Not specified."}</p></div><div><span>Friday synthesis question</span><p>{planner.meta.synthesisQuestion || "Not specified."}</p></div><div><span>Likely misconceptions</span><p>{planner.meta.misconceptions || "Not specified."}</p></div></section>
+
+    {archiveOpen && <div className="modal-backdrop archive-backdrop screen-only" onMouseDown={() => setArchiveOpen(false)}><section className="drawer archive-drawer" role="dialog" aria-modal="true" aria-labelledby="archive-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Durable planning library // Google Drive</p><h2 id="archive-title">Week archive</h2></div><button type="button" onClick={() => setArchiveOpen(false)} aria-label="Close">×</button></div>
+      <section className={`archive-connection status-${archiveStatus}`}><div><span>{archiveStatus === "connected" ? "Folder connected" : archiveStatus === "working" ? "Working" : archiveStatus === "permission" ? "Reconnect needed" : archiveStatus === "unsupported" ? "Browser fallback" : "Archive folder"}</span><strong>{archiveHandle?.name || "Weekly Lesson Planner Archive"}</strong><p aria-live="polite">{archiveStatus === "unsupported" ? "Folder access is unavailable in this browser. You can still download a portable JSON backup." : archiveMessage || "Choose the folder you created in Google Drive. No share link or permission change is needed."}</p></div><i aria-hidden="true">{archiveStatus === "connected" ? "✓" : archiveStatus === "working" ? "…" : "↗"}</i></section>
+      <div className="archive-toolbar">{archiveStatus === "unsupported" ? <button className="primary" type="button" onClick={exportJson}>Download JSON backup</button> : <><button className="primary" type="button" disabled={archiveStatus === "working"} onClick={() => archiveHandle && archiveStatus === "connected" ? archiveCurrentWeek() : connectArchiveFolder(false)}>{archiveHandle && archiveStatus === "connected" ? "Archive current week" : archiveStatus === "permission" ? "Reconnect folder" : "Connect archive folder"}</button>{archiveHandle && <button type="button" disabled={archiveStatus === "working"} onClick={() => scanArchiveFolder()}>Refresh</button>}<button type="button" disabled={archiveStatus === "working"} onClick={() => connectArchiveFolder(true)}>{archiveHandle ? "Change folder" : "Choose folder"}</button></>}</div>
+      <p className="archive-assurance">The archive files live in Google Drive. If browser storage is cleared, reconnect this same folder and the app will rebuild the list.</p>
+      <div className="archive-list">{archiveEntries.length === 0 ? <div className="archive-empty"><strong>No archived weeks are listed yet.</strong><p>Connect the folder, then use <em>Archive current week</em> whenever you want a permanent snapshot.</p></div> : archiveEntries.map((entry) => <article className="archive-card" key={entry.filename}><div><span>{entry.planner.weekOf ? `Week of ${entry.planner.weekOf}` : "Undated week"}</span><h3>{entry.planner.meta.topic || "Untitled lesson plan"}</h3><p>{entry.planner.activeDays.length} school day{entry.planner.activeDays.length === 1 ? "" : "s"} · Saved {formatArchiveDate(entry.archivedAt)}</p><small title={entry.filename}>{entry.filename}</small></div><div><button type="button" onClick={() => restoreArchivedWeek(entry)}>Restore</button><button className="danger" type="button" onClick={() => deleteArchivedWeek(entry)}>Delete</button></div></article>)}</div>
+    </section></div>}
 
     {pendingImport && <div className="modal-backdrop import-backdrop screen-only" onMouseDown={() => setPendingImport(null)}><section className="drawer import-drawer" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">JSON import // Review before applying</p><h2 id="import-title">Choose what to import</h2></div><button type="button" onClick={() => setPendingImport(null)} aria-label="Close">×</button></div><p className="import-summary"><strong>{pendingImport.filename}</strong> contains {pendingImport.kind === "ai" ? "an AI-generated lesson plan" : "a complete planner backup"}. Only the choices below will be changed.</p>{pendingImport.backup && <label className="restore-choice"><input type="checkbox" checked={restoreFullBackup} onChange={(event) => setRestoreFullBackup(event.target.checked)} /><span><strong>Restore the complete backup</strong><small>Replace the week, weekly brief, all school days, all three slots, and completion status.</small></span></label>}{!restoreFullBackup && <><div className="import-routing">{pendingImport.kind === "backup" && <label><span>Copy from</span><select value={importSourceSlot} onChange={(event) => changeImportSource(event.target.value as Slot)}>{pendingImport.sourceSlots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label>}<label><span>Import into</span><select value={importTargetSlot} onChange={(event) => setImportTargetSlot(event.target.value as Slot)}>{slots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label></div><fieldset className="import-days"><legend>Days to import</legend>{availableImportDays.map((day) => <label key={day}><input type="checkbox" checked={importDays.includes(day)} onChange={() => toggleImportDay(day)} /><span><strong>{dayName[day]}</strong><small>{pendingImport.schedules[importSourceSlot]?.[day]?.length ?? 0} activities</small></span></label>)}</fieldset><div className="import-options">{pendingImport.weekOf && <label><input type="checkbox" checked={applyImportWeek} onChange={(event) => setApplyImportWeek(event.target.checked)} />Use imported week date <strong>{pendingImport.weekOf}</strong></label>}{pendingImport.meta && <label><input type="checkbox" checked={applyImportMeta} onChange={(event) => setApplyImportMeta(event.target.checked)} />Apply the imported weekly brief</label>}</div></>}<div className="drawer-actions"><button type="button" onClick={() => setPendingImport(null)}>Cancel</button><button className="primary" type="button" disabled={!restoreFullBackup && importDays.length === 0} onClick={applySelectedImport}>{restoreFullBackup ? "Restore backup" : `Import ${importDays.length} day${importDays.length === 1 ? "" : "s"}`}</button></div></section></div>}
 
