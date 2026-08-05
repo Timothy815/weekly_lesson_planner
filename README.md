@@ -16,6 +16,12 @@ Use **Undo** and **Redo** in the planner controls to reverse or reapply planner 
 
 In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their header subtitle, suggested outcome, and learning objective—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
 
+## Finish a day and move into next week
+
+Use **Finish day** to record what happened in a class slot. Choose any unfinished activities that should move to a later school day or be held for next week, then optionally save a private reflection and a precise resume point. The planner preserves a teaching record containing the objective, day details, activity snapshot, completion state, and rollover decision. Recorded days can be reviewed or updated from their day column, and the records are included in JSON archives and readable Markdown exports.
+
+Use **Start next week** to advance the calendar by seven days. The new week can carry unfinished activities into the first school day, copy the current week’s complete structure with fresh completion states, or begin from the routine template. The weekly brief can be carried forward separately. When the Google Drive archive folder is connected, the current week is archived automatically before the transition; if archiving fails, the planner does not replace the current week. The transition can also be undone during the current session.
+
 ## Local and portable data
 
 The planner saves automatically in the browser. Each browser and computer has its own local copy.
