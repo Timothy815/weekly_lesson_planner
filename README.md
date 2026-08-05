@@ -8,11 +8,13 @@ Use **Day view** in the planner controls, then select an active school day. Each
 
 ## Edit and display modes
 
-- **Edit** shows objective fields, completion controls, activity editors, and drag handles.
-- **Display** turns objectives and activities into polished read-only classroom cards while keeping resource links available.
+- **Edit** shows editable day-header subtitles, suggested outcomes, objective fields, completion controls, activity editors, and drag handles.
+- **Display** turns day headers, outcomes, objectives, and activities into polished read-only classroom cards while keeping resource links available.
 - Fullscreen presentation automatically uses the display treatment.
 
-In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their learning objectives—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
+Use **Undo** and **Redo** in the planner controls to reverse or reapply planner changes. Keyboard shortcuts are also supported: `Ctrl/Command+Z` to undo and `Ctrl/Command+Shift+Z` (or `Ctrl+Y`) to redo. The history covers typing, imports, restores, activity moves, and complete-day swaps for the current browser session.
+
+In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their header subtitle, suggested outcome, and learning objective—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
 
 ## Local and portable data
 

@@ -7,6 +7,7 @@ type Slot = "slot1" | "slot2" | "slot3";
 type Category = "Opening" | "Reading" | "Discussion" | "Instruction" | "Lab" | "Python" | "Reflection" | "Assessment";
 type ResourceLink = { label: string; url: string };
 type Segment = { id: string; title: string; minutes: number; notes: string; category: Category; completed: boolean; resources: ResourceLink[] };
+type DayDetails = { focus: string; outcome: string };
 type WeekMeta = {
   topic: string; centralQuestion: string; certificationObjectives: string; article: string;
   video: string; mentalModel: string; pythonConnection: string; primaryLab: string;
@@ -19,6 +20,7 @@ type Planner = {
   meta: WeekMeta;
   schedules: Record<Slot, Record<Day, Segment[]>>;
   dailyObjectives: Record<Slot, Record<Day, string>>;
+  dailyDetails: Record<Slot, Record<Day, DayDetails>>;
 };
 type ImportCandidate = {
   filename: string;
@@ -28,11 +30,13 @@ type ImportCandidate = {
   sourceSlots: Slot[];
   schedules: Partial<Record<Slot, Partial<Record<Day, Segment[]>>>>;
   objectives: Partial<Record<Slot, Partial<Record<Day, string>>>>;
+  details: Partial<Record<Slot, Partial<Record<Day, DayDetails>>>>;
   backup?: Planner;
 };
 type ArchiveDocument = { format: "weekly-lesson-planner-archive"; version: 1; archivedAt: string; planner: Planner };
 type ArchiveEntry = ArchiveDocument & { filename: string };
 type ArchiveStatus = "unsupported" | "disconnected" | "permission" | "connected" | "working" | "error";
+type PlannerUpdate = Planner | ((current: Planner) => Planner);
 type DirectoryPermissionHandle = FileSystemDirectoryHandle & {
   queryPermission?: (options: { mode: "readwrite" }) => Promise<PermissionState>;
   requestPermission?: (options: { mode: "readwrite" }) => Promise<PermissionState>;
@@ -130,6 +134,9 @@ function freshSchedule(): Record<Day, Segment[]> {
 function freshObjectives(): Record<Day, string> {
   return Object.fromEntries(days.map((day) => [day, ""])) as Record<Day, string>;
 }
+function freshDetails(): Record<Day, DayDetails> {
+  return Object.fromEntries(days.map((day) => [day, { focus: dayInfo[day].focus, outcome: dayInfo[day].outcome }])) as Record<Day, DayDetails>;
+}
 function defaultPlanner(): Planner {
   const meta = Object.fromEntries(["topic", "centralQuestion", "certificationObjectives", "article", "video", "mentalModel", "pythonConnection", "primaryLab", "evidence", "synthesisQuestion", "misconceptions", "scaffolding", "extension"].map((key) => [key, ""])) as WeekMeta;
   return {
@@ -139,6 +146,7 @@ function defaultPlanner(): Planner {
     meta,
     schedules: { slot1: freshSchedule(), slot2: freshSchedule(), slot3: freshSchedule() },
     dailyObjectives: { slot1: freshObjectives(), slot2: freshObjectives(), slot3: freshObjectives() },
+    dailyDetails: { slot1: freshDetails(), slot2: freshDetails(), slot3: freshDetails() },
   };
 }
 function isPlanner(value: unknown): boolean {
@@ -153,7 +161,8 @@ function isPlanner(value: unknown): boolean {
     && Object.values(candidate.meta).every((value) => typeof value === "string")
     && !!candidate.schedules
     && slots.every((slot) => days.every((day) => Array.isArray(candidate.schedules?.[slot]?.[day])))
-    && (!candidate.dailyObjectives || slots.every((slot) => days.every((day) => typeof candidate.dailyObjectives?.[slot]?.[day] === "string")));
+    && (!candidate.dailyObjectives || slots.every((slot) => days.every((day) => typeof candidate.dailyObjectives?.[slot]?.[day] === "string")))
+    && (!candidate.dailyDetails || slots.every((slot) => days.every((day) => typeof candidate.dailyDetails?.[slot]?.[day]?.focus === "string" && typeof candidate.dailyDetails?.[slot]?.[day]?.outcome === "string")));
 }
 function normalizeResources(value: unknown): ResourceLink[] {
   if (!Array.isArray(value)) return [];
@@ -177,11 +186,15 @@ function normalizeSegment(value: unknown): Segment {
   };
 }
 function normalizePlanner(input: unknown): Planner {
-  const value = input as Omit<Planner, "dailyObjectives"> & { dailyObjectives?: Planner["dailyObjectives"] };
+  const value = input as Omit<Planner, "dailyObjectives" | "dailyDetails"> & { dailyObjectives?: Planner["dailyObjectives"]; dailyDetails?: Planner["dailyDetails"] };
   return {
     ...value,
     schedules: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.schedules[slot][day].map(normalizeSegment)]))])) as Planner["schedules"],
     dailyObjectives: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.dailyObjectives?.[slot]?.[day] ?? ""]))])) as Planner["dailyObjectives"],
+    dailyDetails: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, {
+      focus: value.dailyDetails?.[slot]?.[day]?.focus ?? dayInfo[day].focus,
+      outcome: value.dailyDetails?.[slot]?.[day]?.outcome ?? dayInfo[day].outcome,
+    }]))])) as Planner["dailyDetails"],
   };
 }
 function isArchiveDocument(value: unknown): value is ArchiveDocument {
@@ -243,19 +256,20 @@ function normalizeMeta(value: unknown): Partial<WeekMeta> | undefined {
 }
 function parseAiImport(value: unknown, filename: string): ImportCandidate | null {
   if (!value || typeof value !== "object") return null;
-  const source = value as { weekOf?: unknown; weeklyBrief?: unknown; days?: unknown; day?: unknown; learningObjective?: unknown; segments?: unknown };
+  const source = value as { weekOf?: unknown; weeklyBrief?: unknown; days?: unknown; day?: unknown; dayHeader?: unknown; suggestedOutcome?: unknown; learningObjective?: unknown; segments?: unknown };
   const rawDays: Partial<Record<Day, unknown>> = {};
   if (source.days && typeof source.days === "object") {
     days.forEach((day) => { if (day in (source.days as object)) rawDays[day] = (source.days as Partial<Record<Day, unknown>>)[day]; });
   } else if (typeof source.day === "string" && days.includes(source.day as Day)) {
-    rawDays[source.day as Day] = { learningObjective: source.learningObjective, segments: source.segments };
+    rawDays[source.day as Day] = { dayHeader: source.dayHeader, suggestedOutcome: source.suggestedOutcome, learningObjective: source.learningObjective, segments: source.segments };
   }
   const schedule: Partial<Record<Day, Segment[]>> = {};
   const objectives: Partial<Record<Day, string>> = {};
+  const details: Partial<Record<Day, DayDetails>> = {};
   days.forEach((day) => {
     const raw = rawDays[day];
     if (!raw || typeof raw !== "object") return;
-    const dayPlan = raw as { learningObjective?: unknown; segments?: unknown };
+    const dayPlan = raw as { dayHeader?: unknown; suggestedOutcome?: unknown; learningObjective?: unknown; segments?: unknown };
     if (!Array.isArray(dayPlan.segments)) return;
     const imported = dayPlan.segments.flatMap((segment) => {
       if (!segment || typeof segment !== "object") return [];
@@ -265,6 +279,10 @@ function parseAiImport(value: unknown, filename: string): ImportCandidate | null
     });
     schedule[day] = imported;
     objectives[day] = typeof dayPlan.learningObjective === "string" ? dayPlan.learningObjective : "";
+    details[day] = {
+      focus: typeof dayPlan.dayHeader === "string" ? dayPlan.dayHeader : dayInfo[day].focus,
+      outcome: typeof dayPlan.suggestedOutcome === "string" ? dayPlan.suggestedOutcome : dayInfo[day].outcome,
+    };
   });
   if (!days.some((day) => schedule[day])) return null;
   return {
@@ -275,6 +293,7 @@ function parseAiImport(value: unknown, filename: string): ImportCandidate | null
     sourceSlots: ["slot1"],
     schedules: { slot1: schedule },
     objectives: { slot1: objectives },
+    details: { slot1: details },
   };
 }
 function range(start: number, duration: number) {
@@ -314,9 +333,12 @@ export default function Home() {
   const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
   const [archiveStatus, setArchiveStatus] = useState<ArchiveStatus>("disconnected");
   const [archiveMessage, setArchiveMessage] = useState("");
+  const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 });
   const importInput = useRef<HTMLInputElement>(null);
   const dragSource = useRef<{ slot: Slot; day: Day; id: string } | null>(null);
   const dayDragSource = useRef<Day | null>(null);
+  const undoHistory = useRef<Planner[]>([]);
+  const redoHistory = useRef<Planner[]>([]);
 
   useEffect(() => {
     try {
@@ -374,6 +396,22 @@ export default function Home() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = event.metaKey || event.ctrlKey;
+      if (!command) return;
+      if (event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoPlanner(); else undoPlanner();
+      } else if (event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redoPlanner();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [planner]);
+
   const schedule = planner.schedules[activeSlot];
   const displayMode = appMode === "display" || presenting;
   const activeDays = days.filter((day) => planner.activeDays.includes(day));
@@ -390,23 +428,55 @@ export default function Home() {
     return Number.isNaN(date.getTime()) ? "Unscheduled week" : `Week of ${date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
   }, [planner.weekOf]);
 
+  function changePlanner(update: PlannerUpdate) {
+    const next = typeof update === "function" ? update(planner) : update;
+    if (next === planner) return;
+    undoHistory.current = [...undoHistory.current, planner].slice(-100);
+    redoHistory.current = [];
+    setPlanner(next);
+    setHistoryState({ undo: undoHistory.current.length, redo: 0 });
+  }
+  function undoPlanner() {
+    const previous = undoHistory.current.at(-1);
+    if (!previous) return;
+    undoHistory.current = undoHistory.current.slice(0, -1);
+    redoHistory.current = [planner, ...redoHistory.current].slice(0, 100);
+    setPlanner(previous);
+    setEditing(null);
+    setHistoryState({ undo: undoHistory.current.length, redo: redoHistory.current.length });
+    setNotice("Undid the last planner change.");
+  }
+  function redoPlanner() {
+    const next = redoHistory.current[0];
+    if (!next) return;
+    redoHistory.current = redoHistory.current.slice(1);
+    undoHistory.current = [...undoHistory.current, planner].slice(-100);
+    setPlanner(next);
+    setEditing(null);
+    setHistoryState({ undo: undoHistory.current.length, redo: redoHistory.current.length });
+    setNotice("Redid the planner change.");
+  }
+
   function updateMeta(key: keyof WeekMeta, value: string) {
-    setPlanner((current) => ({ ...current, meta: { ...current.meta, [key]: value } }));
+    changePlanner((current) => ({ ...current, meta: { ...current.meta, [key]: value } }));
   }
   function updateObjective(day: Day, value: string, slot = activeSlot) {
-    setPlanner((current) => ({ ...current, dailyObjectives: { ...current.dailyObjectives, [slot]: { ...current.dailyObjectives[slot], [day]: value } } }));
+    changePlanner((current) => ({ ...current, dailyObjectives: { ...current.dailyObjectives, [slot]: { ...current.dailyObjectives[slot], [day]: value } } }));
+  }
+  function updateDayDetails(day: Day, patch: Partial<DayDetails>, slot = activeSlot) {
+    changePlanner((current) => ({ ...current, dailyDetails: { ...current.dailyDetails, [slot]: { ...current.dailyDetails[slot], [day]: { ...current.dailyDetails[slot][day], ...patch } } } }));
   }
   function updateSegment(day: Day, id: string, patch: Partial<Segment>, slot = activeSlot) {
-    setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [slot]: { ...current.schedules[slot], [day]: current.schedules[slot][day].map((item) => item.id === id ? { ...item, ...patch } : item) } } }));
+    changePlanner((current) => ({ ...current, schedules: { ...current.schedules, [slot]: { ...current.schedules[slot], [day]: current.schedules[slot][day].map((item) => item.id === id ? { ...item, ...patch } : item) } } }));
   }
   function addSegment(day: Day) {
     const item: Segment = { id: uid(), title: "New segment", minutes: 10, notes: "Add the purpose, materials, or stopping point.", category: "Instruction", completed: false, resources: [] };
-    setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [activeSlot]: { ...current.schedules[activeSlot], [day]: [...current.schedules[activeSlot][day], item] } } }));
+    changePlanner((current) => ({ ...current, schedules: { ...current.schedules, [activeSlot]: { ...current.schedules[activeSlot], [day]: [...current.schedules[activeSlot][day], item] } } }));
     setEditing({ slot: activeSlot, day, id: item.id });
   }
   function deleteSegment() {
     if (!editing || !selected || !confirm(`Delete “${selected.title}”?`)) return;
-    setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [editing.slot]: { ...current.schedules[editing.slot], [editing.day]: current.schedules[editing.slot][editing.day].filter((item) => item.id !== editing.id) } } }));
+    changePlanner((current) => ({ ...current, schedules: { ...current.schedules, [editing.slot]: { ...current.schedules[editing.slot], [editing.day]: current.schedules[editing.slot][editing.day].filter((item) => item.id !== editing.id) } } }));
     setEditing(null);
   }
   function addResource() {
@@ -430,7 +500,7 @@ export default function Home() {
   }
   function moveSegment(source: { slot: Slot; day: Day; id: string }, targetDay: Day, targetIndex: number) {
     if (source.slot !== activeSlot) return;
-    setPlanner((current) => {
+    changePlanner((current) => {
       const currentSchedule = current.schedules[activeSlot];
       const moving = currentSchedule[source.day].find((item) => item.id === source.id);
       if (!moving) return current;
@@ -442,13 +512,15 @@ export default function Home() {
   }
   function swapDayPlans(sourceDay: Day, targetDay: Day) {
     if (sourceDay === targetDay) return;
-    setPlanner((current) => {
+    changePlanner((current) => {
       const currentSchedule = current.schedules[activeSlot];
       const currentObjectives = current.dailyObjectives[activeSlot];
+      const currentDetails = current.dailyDetails[activeSlot];
       return {
         ...current,
         schedules: { ...current.schedules, [activeSlot]: { ...currentSchedule, [sourceDay]: currentSchedule[targetDay], [targetDay]: currentSchedule[sourceDay] } },
         dailyObjectives: { ...current.dailyObjectives, [activeSlot]: { ...currentObjectives, [sourceDay]: currentObjectives[targetDay], [targetDay]: currentObjectives[sourceDay] } },
+        dailyDetails: { ...current.dailyDetails, [activeSlot]: { ...currentDetails, [sourceDay]: currentDetails[targetDay], [targetDay]: currentDetails[sourceDay] } },
       };
     });
     setNotice(`${dayName[sourceDay]} and ${dayName[targetDay]} plans were swapped in ${slotName[activeSlot]}.`);
@@ -466,7 +538,7 @@ export default function Home() {
     if (index >= 0 && target >= 0 && target < schedule[day].length) moveSegment({ slot: activeSlot, day, id }, day, target);
   }
   function toggleDay(day: Day) {
-    setPlanner((current) => {
+    changePlanner((current) => {
       const active = current.activeDays.includes(day);
       if (active && current.activeDays.length === 1) { setNotice("Keep at least one school day in the week."); return current; }
       const next = active ? current.activeDays.filter((item) => item !== day) : [...current.activeDays, day];
@@ -496,7 +568,7 @@ export default function Home() {
   function copySlot(target: Slot) {
     if (!confirm(`Replace ${slotName[target]} with a copy of ${slotName[activeSlot]}?`)) return;
     const copy = Object.fromEntries(days.map((day) => [day, schedule[day].map((item) => ({ ...item, id: uid(), completed: false }))])) as Record<Day, Segment[]>;
-    setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [target]: copy }, dailyObjectives: { ...current.dailyObjectives, [target]: { ...current.dailyObjectives[activeSlot] } } }));
+    changePlanner((current) => ({ ...current, schedules: { ...current.schedules, [target]: copy }, dailyObjectives: { ...current.dailyObjectives, [target]: { ...current.dailyObjectives[activeSlot] } }, dailyDetails: { ...current.dailyDetails, [target]: structuredClone(current.dailyDetails[activeSlot]) } }));
     setNotice(`${slotName[activeSlot]} was copied to ${slotName[target]}.`);
   }
   function download(content: string, filename: string, type: string) {
@@ -580,7 +652,7 @@ export default function Home() {
     const topic = entry.planner.meta.topic || `week of ${entry.planner.weekOf}`;
     if (!confirm(`Replace the current planner with the archived plan “${topic}”?\n\nThe current week will remain only if you archive or export it first.`)) return;
     const restored = normalizePlanner(entry.planner);
-    setPlanner(restored);
+    changePlanner(restored);
     setSelectedDay(restored.activeDays[0]);
     setPrintDay(restored.activeDays[0]);
     setEditing(null);
@@ -616,11 +688,13 @@ export default function Home() {
     const template = scope === "day" ? {
       ...shared,
       day: activeDays.includes(selectedDay) ? selectedDay : activeDays[0],
+      dayHeader: planner.dailyDetails[activeSlot][activeDays.includes(selectedDay) ? selectedDay : activeDays[0]].focus,
+      suggestedOutcome: planner.dailyDetails[activeSlot][activeDays.includes(selectedDay) ? selectedDay : activeDays[0]].outcome,
       learningObjective: "Students will be able to…",
       segments: [sampleSegment("Opening activity"), sampleSegment("Core learning activity"), sampleSegment("Exit ticket")],
     } : {
       ...shared,
-      days: Object.fromEntries(days.map((day) => [day, { learningObjective: "Students will be able to…", segments: [sampleSegment(`${dayName[day]} opening`), sampleSegment(`${dayName[day]} core activity`), sampleSegment(`${dayName[day]} reflection`)] }])),
+      days: Object.fromEntries(days.map((day) => [day, { dayHeader: planner.dailyDetails[activeSlot][day].focus, suggestedOutcome: planner.dailyDetails[activeSlot][day].outcome, learningObjective: "Students will be able to…", segments: [sampleSegment(`${dayName[day]} opening`), sampleSegment(`${dayName[day]} core activity`), sampleSegment(`${dayName[day]} reflection`)] }])),
     };
     download(JSON.stringify(template, null, 2), `ai-${scope}-lesson-template.json`, "application/json");
     setNotice(`AI ${scope} template downloaded.`);
@@ -630,8 +704,9 @@ export default function Home() {
     slots.forEach((slot) => {
       lines.push(`## ${slotName[slot]}`, "");
       activeDays.forEach((day) => {
-        lines.push(`### ${dayName[day]} — ${dayInfo[day].focus}`, "");
+        lines.push(`### ${dayName[day]} — ${planner.dailyDetails[slot][day].focus}`, "");
         lines.push(`**Learning objective:** ${planner.dailyObjectives[slot][day] || "Not set"}`, "");
+        lines.push(`**Suggested outcome:** ${planner.dailyDetails[slot][day].outcome || "Not set"}`, "");
         let elapsed = 0;
         planner.schedules[slot][day].forEach((item) => {
           const time = range(elapsed, item.minutes); elapsed += item.minutes;
@@ -652,7 +727,8 @@ export default function Home() {
         const backup = normalizePlanner(parsed);
         const schedules = Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(backup.activeDays.map((day) => [day, backup.schedules[slot][day]]))])) as ImportCandidate["schedules"];
         const objectives = Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(backup.activeDays.map((day) => [day, backup.dailyObjectives[slot][day]]))])) as ImportCandidate["objectives"];
-        candidate = { filename: file.name, kind: "backup", weekOf: backup.weekOf, meta: backup.meta, sourceSlots: [...slots], schedules, objectives, backup };
+        const details = Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(backup.activeDays.map((day) => [day, backup.dailyDetails[slot][day]]))])) as ImportCandidate["details"];
+        candidate = { filename: file.name, kind: "backup", weekOf: backup.weekOf, meta: backup.meta, sourceSlots: [...slots], schedules, objectives, details, backup };
       } else candidate = parseAiImport(parsed, file.name);
       if (!candidate) throw new Error("invalid");
       const sourceSlot = candidate.sourceSlots.includes(activeSlot) ? activeSlot : candidate.sourceSlots[0];
@@ -676,20 +752,22 @@ export default function Home() {
   function applySelectedImport() {
     if (!pendingImport) return;
     if (restoreFullBackup && pendingImport.backup) {
-      setPlanner(pendingImport.backup);
+      changePlanner(pendingImport.backup);
       setPendingImport(null);
       setEditing(null);
       setNotice(`Restored the complete backup from ${pendingImport.filename}.`);
       return;
     }
     if (!importDays.length) { setNotice("Select at least one day to import."); return; }
-    setPlanner((current) => {
+    changePlanner((current) => {
       const targetSchedule = { ...current.schedules[importTargetSlot] };
       const targetObjectives = { ...current.dailyObjectives[importTargetSlot] };
+      const targetDetails = { ...current.dailyDetails[importTargetSlot] };
       importDays.forEach((day) => {
         const incoming = pendingImport.schedules[importSourceSlot]?.[day];
         if (incoming) targetSchedule[day] = incoming.map((item) => ({ ...item, id: uid(), resources: item.resources.map((resource) => ({ ...resource })) }));
         targetObjectives[day] = pendingImport.objectives[importSourceSlot]?.[day] ?? "";
+        targetDetails[day] = pendingImport.details[importSourceSlot]?.[day] ?? targetDetails[day];
       });
       return {
         ...current,
@@ -698,6 +776,7 @@ export default function Home() {
         activeDays: days.filter((day) => current.activeDays.includes(day) || importDays.includes(day)),
         schedules: { ...current.schedules, [importTargetSlot]: targetSchedule },
         dailyObjectives: { ...current.dailyObjectives, [importTargetSlot]: targetObjectives },
+        dailyDetails: { ...current.dailyDetails, [importTargetSlot]: targetDetails },
       };
     });
     setActiveSlot(importTargetSlot);
@@ -715,7 +794,7 @@ export default function Home() {
   }
   function restoreTemplate() {
     if (!confirm("Replace this entire week with a fresh routine template? Export JSON first if you may need this plan later.")) return;
-    const fresh = defaultPlanner(); fresh.weekOf = planner.weekOf; setPlanner(fresh); setEditing(null); setNotice("The routine template was restored for all three slots.");
+    const fresh = defaultPlanner(); fresh.weekOf = planner.weekOf; changePlanner(fresh); setEditing(null); setNotice("The routine template was restored for all three slots.");
   }
 
   const metaFields: [keyof WeekMeta, string, string][] = [
@@ -742,7 +821,7 @@ export default function Home() {
 
     <section className="planner-hero screen-only" id="top">
       <div><p className="eyebrow">Instructional operations // 90-minute blocks</p><h1>Shape the week.<br /><em>Keep the evidence.</em></h1><p>Arrange each class like a broadcast schedule: move segments, adjust airtime, mark what happened, and carry the plan anywhere.</p></div>
-      <aside className="week-brief"><span>Current planning cycle</span><label>Week beginning<input type="date" value={planner.weekOf} onChange={(event) => setPlanner((current) => ({ ...current, weekOf: event.target.value }))} /></label><strong>{planner.meta.topic || "Weekly topic not set"}</strong><button type="button" onClick={() => setBriefOpen(true)}>Open weekly brief <b>→</b></button></aside>
+      <aside className="week-brief"><span>Current planning cycle</span><label>Week beginning<input type="date" value={planner.weekOf} onChange={(event) => changePlanner((current) => ({ ...current, weekOf: event.target.value }))} /></label><strong>{planner.meta.topic || "Weekly topic not set"}</strong><button type="button" onClick={() => setBriefOpen(true)}>Open weekly brief <b>→</b></button></aside>
     </section>
 
     <section className="control-deck screen-only" aria-label="Planner controls">
@@ -751,6 +830,10 @@ export default function Home() {
         <div className="mode-toggle" aria-label="Planner mode">
           <button type="button" className={appMode === "edit" ? "active" : ""} aria-pressed={appMode === "edit"} onClick={() => changeAppMode("edit")}>Edit</button>
           <button type="button" className={appMode === "display" ? "active" : ""} aria-pressed={appMode === "display"} onClick={() => changeAppMode("display")}>Display</button>
+        </div>
+        <div className="history-actions" aria-label="Change history">
+          <button type="button" disabled={!historyState.undo} onClick={undoPlanner} title="Undo last planner change (Ctrl/Command+Z)">↶ Undo</button>
+          <button type="button" disabled={!historyState.redo} onClick={redoPlanner} title="Redo planner change (Ctrl/Command+Shift+Z)">↷ Redo</button>
         </div>
         <div className="view-toggle" aria-label="Schedule view">
           <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => setViewMode("week")}>Full week</button>
@@ -795,9 +878,9 @@ export default function Home() {
         {displayDays.map((day) => {
           let elapsed = 0; const items = schedule[day]; const minutes = items.reduce((sum, item) => sum + item.minutes, 0);
           return <article className={`day-column ${printMode === "daily" && day === printDay ? "print-target" : ""}`} key={day} data-day={day} onDragOver={(event) => { if (!displayMode) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dropPlanOnDay(day); }}>
-            <header draggable={!displayMode} title={!displayMode ? `Drag to swap the ${dayName[day]} plan with another day` : undefined} onDragStart={(event: DragEvent<HTMLElement>) => { dayDragSource.current = day; dragSource.current = null; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `day:${day}`); }} onDragEnd={() => { dayDragSource.current = null; }}><div><span>{dateForDay(planner.weekOf, day)}</span><strong>{dayName[day]}</strong><small>{dayInfo[day].focus}</small>{!displayMode && <i className="day-drag-hint">⠿ Drag header to swap days</i>}</div><b className={minutes === 90 ? "on-time" : minutes > 90 ? "over" : "under"}>{minutes}<small>/90</small></b></header>
+            <header draggable={!displayMode} title={!displayMode ? `Drag to swap the ${dayName[day]} plan with another day` : undefined} onDragStart={(event: DragEvent<HTMLElement>) => { if ((event.target as HTMLElement).closest("input, textarea")) { event.preventDefault(); return; } dayDragSource.current = day; dragSource.current = null; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `day:${day}`); }} onDragEnd={() => { dayDragSource.current = null; }}><div><span>{dateForDay(planner.weekOf, day)}</span><strong>{dayName[day]}</strong>{displayMode || printMode !== "none" ? <small>{planner.dailyDetails[activeSlot][day].focus || "Daily focus not yet set"}</small> : <input className="day-focus-input" aria-label={`${dayName[day]} header`} draggable={false} value={planner.dailyDetails[activeSlot][day].focus} placeholder="Daily focus or theme" onChange={(event) => updateDayDetails(day, { focus: event.target.value })} />}{!displayMode && printMode === "none" && <i className="day-drag-hint">Edit header · Drag empty header space to swap days</i>}</div><b className={minutes === 90 ? "on-time" : minutes > 90 ? "over" : "under"}>{minutes}<small>/90</small></b></header>
             <div className={`objective-panel ${displayMode ? "objective-display" : ""}`}><label htmlFor={!displayMode ? `objective-${activeSlot}-${day}` : undefined}>Learning objective</label>{displayMode ? <div className="objective-copy">{planner.dailyObjectives[activeSlot][day] || "Learning objective not yet set."}</div> : <textarea id={`objective-${activeSlot}-${day}`} rows={viewMode === "day" ? 3 : 2} value={planner.dailyObjectives[activeSlot][day]} placeholder="Students will be able to…" onChange={(event) => updateObjective(day, event.target.value)} />}</div>
-            <p className="day-outcome"><strong>Suggested outcome</strong>{dayInfo[day].outcome}</p>
+            <div className={`day-outcome ${displayMode || printMode !== "none" ? "outcome-display" : "outcome-edit"}`}><strong>Suggested outcome</strong>{displayMode || printMode !== "none" ? <p>{planner.dailyDetails[activeSlot][day].outcome || "Suggested outcome not yet set."}</p> : <textarea rows={viewMode === "day" ? 2 : 3} value={planner.dailyDetails[activeSlot][day].outcome} placeholder="Describe the understanding or result students should reach…" onChange={(event) => updateDayDetails(day, { outcome: event.target.value })} />}</div>
             <div className="segment-list">{items.map((item, index) => {
               const start = elapsed; elapsed += item.minutes;
               const activityCopy = <><small>{item.category}</small><strong>{item.title}</strong><span>{item.notes}</span></>;
