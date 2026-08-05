@@ -6,7 +6,7 @@ An editable lesson planner for three daily 90-minute cybersecurity class slots. 
 
 Use **Day view** in the planner controls, then select an active school day. Each class slot keeps its own learning objective for every day. The larger daily layout can be edited normally or expanded with **Enter full screen** for classroom projection.
 
-Use **Slot times** to enter the real start time for each of the three 90-minute class slots. Activity cards, printable plans, and readable Markdown then show real clock ranges calculated from the selected slot’s start time. The slot times remain in place when starting a new week or restoring the routine template.
+Use **Slot times** to enter the real start time for each of the three class slots. The app automatically projects and displays the end time 90 minutes later. Slot tabs, status information, activity cards, printable plans, and readable Markdown show the complete clock window. Activity ranges still follow their actual accumulated durations, including plans that run over 90 minutes. The slot times remain in place when starting a new week or restoring the routine template.
 
 ## Edit and display modes
 

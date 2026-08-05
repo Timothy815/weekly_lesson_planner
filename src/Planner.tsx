@@ -412,10 +412,11 @@ function range(start: number, duration: number, slotStart = "") {
   const from = clock(base + start); const to = clock(base + start + duration);
   return from.period === to.period ? `${from.text}–${to.text} ${to.period}` : `${from.text} ${from.period}–${to.text} ${to.period}`;
 }
-function displaySlotTime(value: string) {
-  if (!value) return "";
-  const formatted = range(0, 0, value);
-  return formatted.split("–")[0] + (formatted.includes(" AM") ? " AM" : formatted.includes(" PM") ? " PM" : "");
+function displaySlotWindow(value: string) {
+  return value ? range(0, 90, value) : "";
+}
+function displaySlotEnd(value: string) {
+  return value ? displaySlotWindow(value).split("–")[1] : "";
 }
 function dateForDay(weekOf: string, day: Day) {
   const date = new Date(`${weekOf}T12:00:00`);
@@ -1073,7 +1074,7 @@ export default function Home() {
   function exportMarkdown() {
     const lines = [`# Cybersecurity Weekly Plan — ${weekLabel}`, "", `**Weekly topic:** ${planner.meta.topic || "Not set"}`, `**Central question:** ${planner.meta.centralQuestion || "Not set"}`, ""];
     slots.forEach((slot) => {
-      lines.push(`## ${slotName[slot]}${planner.slotStartTimes[slot] ? ` — starts ${displaySlotTime(planner.slotStartTimes[slot])}` : ""}`, "");
+      lines.push(`## ${slotName[slot]}${planner.slotStartTimes[slot] ? ` — ${displaySlotWindow(planner.slotStartTimes[slot])}` : ""}`, "");
       activeDays.forEach((day) => {
         lines.push(`### ${dayName[day]} — ${planner.dailyDetails[slot][day].focus}`, "");
         lines.push(`**Learning objective:** ${planner.dailyObjectives[slot][day] || "Not set"}`, "");
@@ -1206,7 +1207,7 @@ export default function Home() {
     </section>
 
     <section className="control-deck screen-only" aria-label="Planner controls">
-      <div className="slot-tabs" role="tablist">{slots.map((slot) => <button key={slot} role="tab" aria-selected={activeSlot === slot} className={activeSlot === slot ? "active" : ""} onClick={() => setActiveSlot(slot)}><span>{slotName[slot]}</span>{planner.slotStartTimes[slot] && <small>{displaySlotTime(planner.slotStartTimes[slot])}</small>}</button>)}</div>
+      <div className="slot-tabs" role="tablist">{slots.map((slot) => <button key={slot} role="tab" aria-selected={activeSlot === slot} className={activeSlot === slot ? "active" : ""} onClick={() => setActiveSlot(slot)}><span>{slotName[slot]}</span>{planner.slotStartTimes[slot] && <small>{displaySlotWindow(planner.slotStartTimes[slot])}</small>}</button>)}</div>
       <div className="control-actions">
         <div className="mode-toggle" aria-label="Planner mode">
           <button type="button" className={appMode === "edit" ? "active" : ""} aria-pressed={appMode === "edit"} onClick={() => changeAppMode("edit")}>Edit</button>
@@ -1252,10 +1253,10 @@ export default function Home() {
 
     {notice && <div className="notice screen-only" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss">×</button></div>}
     <section className="status-strip screen-only">
-      <div><span>Active schedule</span><strong>{slotName[activeSlot]}{planner.slotStartTimes[activeSlot] ? ` · ${displaySlotTime(planner.slotStartTimes[activeSlot])}` : ""}</strong></div><div><span>{viewMode === "day" ? `${dayName[visibleDays[0]]} airtime` : "Planned airtime"}</span><strong>{totalMinutes} minutes</strong></div><div><span>Segments complete</span><strong>{completed} / {segments.length}</strong></div><div className="progress-stat"><span>{viewMode === "day" ? "Daily progress" : "Weekly progress"}</span><strong>{progress}%</strong><i><b style={{ width: `${progress}%` }} /></i></div>
+      <div><span>Active schedule</span><strong>{slotName[activeSlot]}{planner.slotStartTimes[activeSlot] ? ` · ${displaySlotWindow(planner.slotStartTimes[activeSlot])}` : ""}</strong></div><div><span>{viewMode === "day" ? `${dayName[visibleDays[0]]} airtime` : "Planned airtime"}</span><strong>{totalMinutes} minutes</strong></div><div><span>Segments complete</span><strong>{completed} / {segments.length}</strong></div><div className="progress-stat"><span>{viewMode === "day" ? "Daily progress" : "Weekly progress"}</span><strong>{progress}%</strong><i><b style={{ width: `${progress}%` }} /></i></div>
     </section>
 
-    <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}{planner.slotStartTimes[activeSlot] ? ` · ${displaySlotTime(planner.slotStartTimes[activeSlot])}` : ""}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}{printMode === "daily" && planner.dailyObjectives[activeSlot][printDay] && <p className="print-objective"><strong>Learning objective:</strong> {planner.dailyObjectives[activeSlot][printDay]}</p>}</div>
+    <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}{planner.slotStartTimes[activeSlot] ? ` · ${displaySlotWindow(planner.slotStartTimes[activeSlot])}` : ""}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}{printMode === "daily" && planner.dailyObjectives[activeSlot][printDay] && <p className="print-objective"><strong>Learning objective:</strong> {planner.dailyObjectives[activeSlot][printDay]}</p>}</div>
 
     <section className="schedule-section">
       <div className="schedule-title screen-only"><div><p className="eyebrow">01 // {viewMode === "day" ? "Daily plan" : "Broadcast board"}</p><h2>{viewMode === "day" ? `${dayName[visibleDays[0]]}, ${dateForDay(planner.weekOf, visibleDays[0])}` : weekLabel}</h2></div><p>{displayMode ? "A polished classroom-ready view of the selected plan. Resource links remain available for quick access." : viewMode === "day" ? "Edit the objective and activities here. Drag an activity or the entire day onto a day tab to move the plan." : "Drag activities between days, or drag a day header onto another column to swap both complete day plans."}</p></div>
@@ -1283,7 +1284,7 @@ export default function Home() {
 
     <section className="weekly-notes"><div><span>Certification objectives</span><p>{planner.meta.certificationObjectives || "Not specified."}</p></div><div><span>Required evidence</span><p>{planner.meta.evidence || "Not specified."}</p></div><div><span>Friday synthesis question</span><p>{planner.meta.synthesisQuestion || "Not specified."}</p></div><div><span>Likely misconceptions</span><p>{planner.meta.misconceptions || "Not specified."}</p></div></section>
 
-    {slotTimesOpen && <div className="modal-backdrop slot-times-backdrop screen-only" onMouseDown={() => setSlotTimesOpen(false)}><section className="drawer slot-times-drawer" role="dialog" aria-modal="true" aria-labelledby="slot-times-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Bell schedule // Real activity times</p><h2 id="slot-times-title">Slot start times</h2></div><button type="button" onClick={() => setSlotTimesOpen(false)} aria-label="Close">×</button></div><p className="slot-times-summary">Set the beginning of each 90-minute class. Activity cards automatically calculate their clock ranges from these times and update whenever activities move or change length.</p><div className="slot-time-fields">{slots.map((slot) => <label key={slot}><span>{slotName[slot]}</span><input type="time" value={planner.slotStartTimes[slot]} onChange={(event) => updateSlotStartTime(slot, event.target.value)} /><small>{planner.slotStartTimes[slot] ? `Runs approximately ${range(0, 90, planner.slotStartTimes[slot])}` : "No start time set; cards use relative elapsed time."}</small></label>)}</div><div className="drawer-actions"><button type="button" onClick={clearSlotStartTimes}>Clear times</button><button className="primary" type="button" onClick={() => setSlotTimesOpen(false)}>Done</button></div></section></div>}
+    {slotTimesOpen && <div className="modal-backdrop slot-times-backdrop screen-only" onMouseDown={() => setSlotTimesOpen(false)}><section className="drawer slot-times-drawer" role="dialog" aria-modal="true" aria-labelledby="slot-times-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Bell schedule // 90-minute projections</p><h2 id="slot-times-title">Slot times</h2></div><button type="button" onClick={() => setSlotTimesOpen(false)} aria-label="Close">×</button></div><p className="slot-times-summary">Set each start time. The projected end is calculated automatically at 90 minutes, while activity cards continue to reflect the actual accumulated plan.</p><div className="slot-time-fields">{slots.map((slot) => <label key={slot}><span>{slotName[slot]}</span><div><small>Start time</small><input type="time" value={planner.slotStartTimes[slot]} onChange={(event) => updateSlotStartTime(slot, event.target.value)} /></div><div className="projected-end"><small>Projected end</small><output>{displaySlotEnd(planner.slotStartTimes[slot]) || "—"}</output></div></label>)}</div><div className="drawer-actions"><button type="button" onClick={clearSlotStartTimes}>Clear times</button><button className="primary" type="button" onClick={() => setSlotTimesOpen(false)}>Done</button></div></section></div>}
 
     {libraryOpen && <div className="modal-backdrop library-backdrop screen-only" onMouseDown={() => setLibraryOpen(false)}><section className="drawer library-drawer" role="dialog" aria-modal="true" aria-labelledby="library-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Reusable teaching assets // {planner.library.length} saved</p><h2 id="library-title">Lesson library</h2></div><button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close">×</button></div>
       <section className="library-target"><div><label><span>Target class</span><select value={libraryTargetSlot} onChange={(event) => setLibraryTargetSlot(event.target.value as Slot)}>{slots.map((slot) => <option key={slot} value={slot}>{slotName[slot]}</option>)}</select></label><label><span>Target day</span><select value={libraryTargetDay} onChange={(event) => setLibraryTargetDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select></label></div><p>Activities are added to this target. Saved days replace this target after confirmation.</p></section>
