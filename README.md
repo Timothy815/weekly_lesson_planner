@@ -20,6 +20,12 @@ Use **Undo** and **Redo** in the planner controls to reverse or reapply planner 
 
 In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their header subtitle, desired outcome, daily product, and learning objective—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
 
+## Weekly summary
+
+Open **Weekly summary** for a report generated directly from the selected class slot’s current plan. It automatically collects the week and class, day and activity counts, planned minutes, learning objectives, desired outcomes, daily products, chronological activity sequences, and working resource links. Editing any day or activity updates the report automatically, so none of that information needs to be entered again.
+
+Topic, central question, certification notes, lab context, and similar week-level details are optional. Add them under **Edit optional week-level context** only when they provide information that cannot be inferred reliably from the lesson plans.
+
 ## Finish a day and move into next week
 
 Use **Finish day** to record what happened in a class slot. Choose any unfinished activities that should move to a later school day or be held for next week, then optionally save a private reflection and a precise resume point. The planner preserves a teaching record containing the objective, day details, activity snapshot, completion state, and rollover decision. Recorded days can be reviewed or updated from their day column, and the records are included in JSON archives and readable Markdown exports.
