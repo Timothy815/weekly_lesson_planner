@@ -39,6 +39,7 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition-duration:.01ms!important}}
 
 .slot-tabs button small{white-space:nowrap}.slot-time-fields label{grid-template-columns:110px 1fr 1fr}.slot-time-fields label>div{display:grid;gap:5px}.slot-time-fields label>div>small{color:#6f838b;font:700 7px "Courier New",monospace;text-transform:uppercase}.slot-time-fields .projected-end{align-self:stretch;padding:9px 11px;align-content:center;background:#e6f5f0;border-left:3px solid #49a27e}.slot-time-fields output{color:#245844;font:400 17px Georgia,serif}
+.daily-view-board .segment-list{grid-template-columns:1fr}
 @media(max-width:760px){.slot-time-fields label{grid-template-columns:1fr 1fr}.slot-time-fields label>span{grid-column:1/-1}}
 
 @media print{
