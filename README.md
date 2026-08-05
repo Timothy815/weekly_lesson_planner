@@ -6,6 +6,14 @@ An editable lesson planner for three daily 90-minute cybersecurity class slots. 
 
 Use **Day view** in the planner controls, then select an active school day. Each class slot keeps its own learning objective for every day. The larger daily layout can be edited normally or expanded with **Enter full screen** for classroom projection.
 
+## Edit and display modes
+
+- **Edit** shows objective fields, completion controls, activity editors, and drag handles.
+- **Display** turns objectives and activities into polished read-only classroom cards while keeping resource links available.
+- Fullscreen presentation automatically uses the display treatment.
+
+In Edit mode, drag an activity card onto another day or onto a Day View tab to move it. Drag a day header onto another day to safely swap both complete plans—including their learning objectives—without overwriting either plan. On touch devices, an activity’s editor also includes a **Scheduled day** menu.
+
 ## Local and portable data
 
 The planner saves automatically in the browser. Each browser and computer has its own local copy.

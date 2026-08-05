@@ -231,6 +231,7 @@ export default function Home() {
   const [planner, setPlanner] = useState<Planner>(() => defaultPlanner());
   const [activeSlot, setActiveSlot] = useState<Slot>("slot1");
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
+  const [appMode, setAppMode] = useState<"edit" | "display">("edit");
   const [selectedDay, setSelectedDay] = useState<Day>("monday");
   const [presenting, setPresenting] = useState(false);
   const [editing, setEditing] = useState<{ slot: Slot; day: Day; id: string } | null>(null);
@@ -250,6 +251,7 @@ export default function Home() {
   const [restoreFullBackup, setRestoreFullBackup] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const dragSource = useRef<{ slot: Slot; day: Day; id: string } | null>(null);
+  const dayDragSource = useRef<Day | null>(null);
 
   useEffect(() => {
     try {
@@ -286,6 +288,7 @@ export default function Home() {
   }, []);
 
   const schedule = planner.schedules[activeSlot];
+  const displayMode = appMode === "display" || presenting;
   const activeDays = days.filter((day) => planner.activeDays.includes(day));
   const visibleDays = viewMode === "day" ? [activeDays.includes(selectedDay) ? selectedDay : activeDays[0]] : activeDays;
   const displayDays = printMode === "weekly" ? activeDays : visibleDays;
@@ -331,6 +334,13 @@ export default function Home() {
     if (!editing || !selected) return;
     updateSegment(editing.day, editing.id, { resources: selected.resources.filter((_, resourceIndex) => resourceIndex !== index) }, editing.slot);
   }
+  function moveSelectedToDay(targetDay: Day) {
+    if (!editing || !selected || targetDay === editing.day) return;
+    const sourceDay = editing.day;
+    moveSegment({ slot: editing.slot, day: sourceDay, id: editing.id }, targetDay, planner.schedules[editing.slot][targetDay].length);
+    setEditing({ ...editing, day: targetDay });
+    setNotice(`“${selected.title}” moved from ${dayName[sourceDay]} to ${dayName[targetDay]}.`);
+  }
   function moveSegment(source: { slot: Slot; day: Day; id: string }, targetDay: Day, targetIndex: number) {
     if (source.slot !== activeSlot) return;
     setPlanner((current) => {
@@ -342,6 +352,26 @@ export default function Home() {
       targetList.splice(Math.max(0, Math.min(targetIndex, targetList.length)), 0, moving);
       return { ...current, schedules: { ...current.schedules, [activeSlot]: { ...currentSchedule, [source.day]: source.day === targetDay ? targetList : sourceList, [targetDay]: targetList } } };
     });
+  }
+  function swapDayPlans(sourceDay: Day, targetDay: Day) {
+    if (sourceDay === targetDay) return;
+    setPlanner((current) => {
+      const currentSchedule = current.schedules[activeSlot];
+      const currentObjectives = current.dailyObjectives[activeSlot];
+      return {
+        ...current,
+        schedules: { ...current.schedules, [activeSlot]: { ...currentSchedule, [sourceDay]: currentSchedule[targetDay], [targetDay]: currentSchedule[sourceDay] } },
+        dailyObjectives: { ...current.dailyObjectives, [activeSlot]: { ...currentObjectives, [sourceDay]: currentObjectives[targetDay], [targetDay]: currentObjectives[sourceDay] } },
+      };
+    });
+    setNotice(`${dayName[sourceDay]} and ${dayName[targetDay]} plans were swapped in ${slotName[activeSlot]}.`);
+  }
+  function dropPlanOnDay(targetDay: Day, targetIndex = schedule[targetDay].length) {
+    if (appMode !== "edit") return;
+    if (dayDragSource.current) swapDayPlans(dayDragSource.current, targetDay);
+    else if (dragSource.current) moveSegment(dragSource.current, targetDay, targetIndex);
+    dayDragSource.current = null;
+    dragSource.current = null;
   }
   function reorder(day: Day, id: string, direction: -1 | 1) {
     const index = schedule[day].findIndex((item) => item.id === id);
@@ -360,6 +390,12 @@ export default function Home() {
     setSelectedDay(day);
     setPrintDay(day);
     setViewMode("day");
+  }
+  function changeAppMode(mode: "edit" | "display") {
+    setAppMode(mode);
+    setEditing(null);
+    setBriefOpen(false);
+    setDaysOpen(false);
   }
   async function togglePresentation() {
     try {
@@ -520,7 +556,7 @@ export default function Home() {
     ["extension", "Extension opportunity", "A meaningful next challenge"],
   ];
 
-  return <main className={`planner-app view-${viewMode} ${presenting ? "projection-mode" : ""} print-${printMode}`}>
+  return <main className={`planner-app view-${viewMode} mode-${displayMode ? "display" : "edit"} ${presenting ? "projection-mode" : ""} print-${printMode}`}>
     <header className="site-header screen-only">
       <a className="brand" href="#top"><span className="logo" aria-hidden="true">CS</span><span><strong>CYBER / PLANNER</strong><small>Weekly operations desk</small></span></a>
       <div className="save-state"><i />{saveLabel}</div>
@@ -534,11 +570,15 @@ export default function Home() {
     <section className="control-deck screen-only" aria-label="Planner controls">
       <div className="slot-tabs" role="tablist">{slots.map((slot) => <button key={slot} role="tab" aria-selected={activeSlot === slot} className={activeSlot === slot ? "active" : ""} onClick={() => setActiveSlot(slot)}>{slotName[slot]}</button>)}</div>
       <div className="control-actions">
+        <div className="mode-toggle" aria-label="Planner mode">
+          <button type="button" className={appMode === "edit" ? "active" : ""} aria-pressed={appMode === "edit"} onClick={() => changeAppMode("edit")}>Edit</button>
+          <button type="button" className={appMode === "display" ? "active" : ""} aria-pressed={appMode === "display"} onClick={() => changeAppMode("display")}>Display</button>
+        </div>
         <div className="view-toggle" aria-label="Schedule view">
           <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => setViewMode("week")}>Full week</button>
           <button type="button" className={viewMode === "day" ? "active" : ""} aria-pressed={viewMode === "day"} onClick={() => showDay(activeDays.includes(selectedDay) ? selectedDay : activeDays[0])}>Day view</button>
         </div>
-        <button type="button" onClick={() => setDaysOpen((open) => !open)}>School days <span>{activeDays.length}/5</span></button>
+        {!displayMode && <><button type="button" onClick={() => setDaysOpen((open) => !open)}>School days <span>{activeDays.length}/5</span></button>
         <button type="button" onClick={() => setBriefOpen(true)}>Weekly brief</button>
         <button type="button" onClick={exportJson}>Export JSON</button>
         <button type="button" onClick={() => importInput.current?.click()}>Import JSON</button>
@@ -552,14 +592,14 @@ export default function Home() {
           <button type="button" onClick={() => printPlan("daily")}>Save selected day PDF</button>
           {slots.filter((slot) => slot !== activeSlot).map((slot) => <button key={slot} type="button" onClick={() => copySlot(slot)}>Copy to {slotName[slot]}</button>)}
           <button type="button" className="danger" onClick={restoreTemplate}>Restore routine template</button>
-        </div></details>
+        </div></details></>}
       </div>
-      {daysOpen && <div className="day-picker"><span>Days in this school week</span>{days.map((day) => <label key={day}><input type="checkbox" checked={planner.activeDays.includes(day)} onChange={() => toggleDay(day)} />{dayName[day]}</label>)}</div>}
+      {!displayMode && daysOpen && <div className="day-picker"><span>Days in this school week</span>{days.map((day) => <label key={day}><input type="checkbox" checked={planner.activeDays.includes(day)} onChange={() => toggleDay(day)} />{dayName[day]}</label>)}</div>}
     </section>
 
     {viewMode === "day" && <nav className="day-view-nav screen-only" aria-label="Choose day to display">
-      <span>Present a day</span>
-      <div>{activeDays.map((day) => <button key={day} type="button" className={visibleDays[0] === day ? "active" : ""} aria-current={visibleDays[0] === day ? "page" : undefined} onClick={() => showDay(day)}><small>{dateForDay(planner.weekOf, day)}</small>{dayName[day]}</button>)}</div>
+      <span>{displayMode ? "Present a day" : "Select or drop on a day"}</span>
+      <div>{activeDays.map((day) => <button key={day} type="button" className={visibleDays[0] === day ? "active" : ""} aria-current={visibleDays[0] === day ? "page" : undefined} onClick={() => showDay(day)} onDragOver={(event) => { if (!displayMode) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dropPlanOnDay(day); showDay(day); }}><small>{dateForDay(planner.weekOf, day)}</small>{dayName[day]}</button>)}</div>
       <button className="projection-action" type="button" onClick={togglePresentation}>{presenting ? "Exit presentation" : "Enter full screen"}</button>
     </nav>}
 
@@ -571,22 +611,23 @@ export default function Home() {
     <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}{printMode === "daily" && planner.dailyObjectives[activeSlot][printDay] && <p className="print-objective"><strong>Learning objective:</strong> {planner.dailyObjectives[activeSlot][printDay]}</p>}</div>
 
     <section className="schedule-section">
-      <div className="schedule-title screen-only"><div><p className="eyebrow">01 // {viewMode === "day" ? "Daily plan" : "Broadcast board"}</p><h2>{viewMode === "day" ? `${dayName[visibleDays[0]]}, ${dateForDay(planner.weekOf, visibleDays[0])}` : weekLabel}</h2></div><p>{viewMode === "day" ? "Edit the learning objective and lesson segments here, or use full screen to present the plan to your class." : "Drag a segment to another day or position. Use the arrow controls when working by keyboard or touch."}</p></div>
+      <div className="schedule-title screen-only"><div><p className="eyebrow">01 // {viewMode === "day" ? "Daily plan" : "Broadcast board"}</p><h2>{viewMode === "day" ? `${dayName[visibleDays[0]]}, ${dateForDay(planner.weekOf, visibleDays[0])}` : weekLabel}</h2></div><p>{displayMode ? "A polished classroom-ready view of the selected plan. Resource links remain available for quick access." : viewMode === "day" ? "Edit the objective and activities here. Drag an activity or the entire day onto a day tab to move the plan." : "Drag activities between days, or drag a day header onto another column to swap both complete day plans."}</p></div>
       <div className={`schedule-board columns-${displayDays.length} ${viewMode === "day" ? "daily-view-board" : ""}`}>
         {displayDays.map((day) => {
           let elapsed = 0; const items = schedule[day]; const minutes = items.reduce((sum, item) => sum + item.minutes, 0);
-          return <article className={`day-column ${printMode === "daily" && day === printDay ? "print-target" : ""}`} key={day} data-day={day} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (dragSource.current) moveSegment(dragSource.current, day, items.length); dragSource.current = null; }}>
-            <header><div><span>{dateForDay(planner.weekOf, day)}</span><strong>{dayName[day]}</strong><small>{dayInfo[day].focus}</small></div><b className={minutes === 90 ? "on-time" : minutes > 90 ? "over" : "under"}>{minutes}<small>/90</small></b></header>
-            <div className="objective-panel"><label htmlFor={`objective-${activeSlot}-${day}`}>Learning objective</label><textarea id={`objective-${activeSlot}-${day}`} rows={viewMode === "day" ? 3 : 2} value={planner.dailyObjectives[activeSlot][day]} placeholder="Students will be able to…" onChange={(event) => updateObjective(day, event.target.value)} /></div>
+          return <article className={`day-column ${printMode === "daily" && day === printDay ? "print-target" : ""}`} key={day} data-day={day} onDragOver={(event) => { if (!displayMode) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); dropPlanOnDay(day); }}>
+            <header draggable={!displayMode} title={!displayMode ? `Drag to swap the ${dayName[day]} plan with another day` : undefined} onDragStart={(event: DragEvent<HTMLElement>) => { dayDragSource.current = day; dragSource.current = null; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `day:${day}`); }} onDragEnd={() => { dayDragSource.current = null; }}><div><span>{dateForDay(planner.weekOf, day)}</span><strong>{dayName[day]}</strong><small>{dayInfo[day].focus}</small>{!displayMode && <i className="day-drag-hint">⠿ Drag header to swap days</i>}</div><b className={minutes === 90 ? "on-time" : minutes > 90 ? "over" : "under"}>{minutes}<small>/90</small></b></header>
+            <div className={`objective-panel ${displayMode ? "objective-display" : ""}`}><label htmlFor={!displayMode ? `objective-${activeSlot}-${day}` : undefined}>Learning objective</label>{displayMode ? <div className="objective-copy">{planner.dailyObjectives[activeSlot][day] || "Learning objective not yet set."}</div> : <textarea id={`objective-${activeSlot}-${day}`} rows={viewMode === "day" ? 3 : 2} value={planner.dailyObjectives[activeSlot][day]} placeholder="Students will be able to…" onChange={(event) => updateObjective(day, event.target.value)} />}</div>
             <p className="day-outcome"><strong>Suggested outcome</strong>{dayInfo[day].outcome}</p>
             <div className="segment-list">{items.map((item, index) => {
               const start = elapsed; elapsed += item.minutes;
-              return <div className={`segment-card category-${item.category.toLowerCase()} ${item.completed ? "completed" : ""}`} draggable key={item.id} onDragStart={(event: DragEvent<HTMLDivElement>) => { dragSource.current = { slot: activeSlot, day, id: item.id }; event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); if (dragSource.current) moveSegment(dragSource.current, day, index); dragSource.current = null; }}>
-                <div className="segment-time"><span>{range(start, item.minutes)}</span><b>{item.minutes}m</b></div>
-                <div className="segment-main"><label className="complete-check"><input type="checkbox" checked={item.completed} onChange={(event) => updateSegment(day, item.id, { completed: event.target.checked })} /><span aria-hidden="true">✓</span><span className="sr-only">Mark {item.title} complete</span></label><button className="segment-copy" type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })}><small>{item.category}</small><strong>{item.title}</strong><span>{item.notes}</span></button><div className="card-movers screen-only"><button type="button" disabled={index === 0} onClick={() => reorder(day, item.id, -1)} aria-label="Move earlier">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => reorder(day, item.id, 1)} aria-label="Move later">↓</button><button type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })} aria-label="Edit segment">•••</button></div>{item.resources.some((resource) => safeHref(resource.url)) && <div className="segment-resources">{item.resources.map((resource, resourceIndex) => { const href = safeHref(resource.url); return href ? <a key={`${resource.url}-${resourceIndex}`} href={href} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>↗ {resource.label || "Open resource"}</a> : null; })}</div>}</div>
+              const activityCopy = <><small>{item.category}</small><strong>{item.title}</strong><span>{item.notes}</span></>;
+              return <div className={`segment-card category-${item.category.toLowerCase()} ${item.completed ? "completed" : ""}`} draggable={!displayMode} key={item.id} onDragStart={(event: DragEvent<HTMLDivElement>) => { if (displayMode) return; dragSource.current = { slot: activeSlot, day, id: item.id }; dayDragSource.current = null; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `activity:${item.id}`); }} onDragEnd={() => { dragSource.current = null; }} onDragOver={(event) => { if (!displayMode) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); dropPlanOnDay(day, index); }}>
+                <div className="segment-time"><span>{range(start, item.minutes)}</span>{displayMode && item.completed && <em>✓ Complete</em>}<b>{item.minutes}m</b></div>
+                <div className="segment-main">{!displayMode && <label className="complete-check"><input type="checkbox" checked={item.completed} onChange={(event) => updateSegment(day, item.id, { completed: event.target.checked })} /><span aria-hidden="true">✓</span><span className="sr-only">Mark {item.title} complete</span></label>}{displayMode ? <div className="segment-copy segment-display-copy">{activityCopy}</div> : <button className="segment-copy" type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })}>{activityCopy}</button>}{!displayMode && <div className="card-movers screen-only"><button type="button" disabled={index === 0} onClick={() => reorder(day, item.id, -1)} aria-label="Move earlier">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => reorder(day, item.id, 1)} aria-label="Move later">↓</button><button type="button" onClick={() => setEditing({ slot: activeSlot, day, id: item.id })} aria-label="Edit segment">•••</button></div>}{item.resources.some((resource) => safeHref(resource.url)) && <div className="segment-resources">{item.resources.map((resource, resourceIndex) => { const href = safeHref(resource.url); return href ? <a key={`${resource.url}-${resourceIndex}`} href={href} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>↗ {resource.label || "Open resource"}</a> : null; })}</div>}</div>
               </div>;
             })}</div>
-            <button className="add-segment screen-only" type="button" onClick={() => addSegment(day)}>＋ Add segment</button><footer><span>Daily product</span><p>{dayInfo[day].product}</p></footer>
+            {!displayMode && <button className="add-segment screen-only" type="button" onClick={() => addSegment(day)}>＋ Add segment</button>}<footer><span>Daily product</span><p>{dayInfo[day].product}</p></footer>
           </article>;
         })}
       </div>
@@ -598,6 +639,6 @@ export default function Home() {
 
     {briefOpen && <div className="modal-backdrop screen-only" onMouseDown={() => setBriefOpen(false)}><section className="drawer weekly-drawer" role="dialog" aria-modal="true" aria-labelledby="brief-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">Planning dossier</p><h2 id="brief-title">Weekly brief</h2></div><button type="button" onClick={() => setBriefOpen(false)} aria-label="Close">×</button></div><div className="field-grid">{metaFields.map(([key, label, placeholder]) => <label key={key} className={key === "topic" || key === "centralQuestion" ? "wide" : ""}><span>{label}</span><textarea rows={key === "topic" ? 2 : 3} value={planner.meta[key]} placeholder={placeholder} onChange={(event) => updateMeta(key, event.target.value)} /></label>)}</div><div className="drawer-actions"><button className="primary" type="button" onClick={() => setBriefOpen(false)}>Done</button></div></section></div>}
 
-    {editing && selected && <div className="modal-backdrop screen-only" onMouseDown={() => setEditing(null)}><section className="drawer segment-drawer" role="dialog" aria-modal="true" aria-labelledby="segment-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">{dayName[editing.day]} // {slotName[editing.slot]}</p><h2 id="segment-title">Edit segment</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close">×</button></div><label><span>Activity title</span><input value={selected.title} onChange={(event) => updateSegment(editing.day, editing.id, { title: event.target.value }, editing.slot)} /></label><div className="split-fields"><label><span>Minutes</span><input type="number" min="1" max="180" value={selected.minutes} onChange={(event) => updateSegment(editing.day, editing.id, { minutes: Math.max(1, Number(event.target.value) || 1) }, editing.slot)} /></label><label><span>Category</span><select value={selected.category} onChange={(event) => updateSegment(editing.day, editing.id, { category: event.target.value as Category }, editing.slot)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><label><span>Purpose and teacher notes</span><textarea rows={7} value={selected.notes} onChange={(event) => updateSegment(editing.day, editing.id, { notes: event.target.value }, editing.slot)} /></label><section className="resource-editor"><div><span>Activity links</span><button type="button" onClick={addResource}>＋ Add link</button></div>{selected.resources.length === 0 && <p>Add websites, documents, videos, or other resources students can open from this card.</p>}{selected.resources.map((resource, index) => <div className="resource-row" key={index}><label><span>Link label</span><input value={resource.label} placeholder="Lab instructions" onChange={(event) => updateResource(index, { label: event.target.value })} /></label><label><span>Web address</span><input type="url" value={resource.url} placeholder="https://…" onChange={(event) => updateResource(index, { url: event.target.value })} /></label><button type="button" onClick={() => removeResource(index)} aria-label={`Remove ${resource.label || "link"}`}>×</button></div>)}</section><label className="completion-row"><input type="checkbox" checked={selected.completed} onChange={(event) => updateSegment(editing.day, editing.id, { completed: event.target.checked }, editing.slot)} />Completed as planned</label><div className="drawer-actions"><button className="danger" type="button" onClick={deleteSegment}>Delete</button><button className="primary" type="button" onClick={() => setEditing(null)}>Done</button></div></section></div>}
+    {editing && selected && <div className="modal-backdrop screen-only" onMouseDown={() => setEditing(null)}><section className="drawer segment-drawer" role="dialog" aria-modal="true" aria-labelledby="segment-title" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">{dayName[editing.day]} // {slotName[editing.slot]}</p><h2 id="segment-title">Edit segment</h2></div><button type="button" onClick={() => setEditing(null)} aria-label="Close">×</button></div><label><span>Activity title</span><input value={selected.title} onChange={(event) => updateSegment(editing.day, editing.id, { title: event.target.value }, editing.slot)} /></label><div className="split-fields"><label><span>Minutes</span><input type="number" min="1" max="180" value={selected.minutes} onChange={(event) => updateSegment(editing.day, editing.id, { minutes: Math.max(1, Number(event.target.value) || 1) }, editing.slot)} /></label><label><span>Category</span><select value={selected.category} onChange={(event) => updateSegment(editing.day, editing.id, { category: event.target.value as Category }, editing.slot)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><label><span>Purpose and teacher notes</span><textarea rows={7} value={selected.notes} onChange={(event) => updateSegment(editing.day, editing.id, { notes: event.target.value }, editing.slot)} /></label><label className="move-day-field"><span>Scheduled day</span><select value={editing.day} onChange={(event) => moveSelectedToDay(event.target.value as Day)}>{activeDays.map((day) => <option key={day} value={day}>{dayName[day]}</option>)}</select><small>Useful on touch devices when dragging is inconvenient.</small></label><section className="resource-editor"><div><span>Activity links</span><button type="button" onClick={addResource}>＋ Add link</button></div>{selected.resources.length === 0 && <p>Add websites, documents, videos, or other resources students can open from this card.</p>}{selected.resources.map((resource, index) => <div className="resource-row" key={index}><label><span>Link label</span><input value={resource.label} placeholder="Lab instructions" onChange={(event) => updateResource(index, { label: event.target.value })} /></label><label><span>Web address</span><input type="url" value={resource.url} placeholder="https://…" onChange={(event) => updateResource(index, { url: event.target.value })} /></label><button type="button" onClick={() => removeResource(index)} aria-label={`Remove ${resource.label || "link"}`}>×</button></div>)}</section><label className="completion-row"><input type="checkbox" checked={selected.completed} onChange={(event) => updateSegment(editing.day, editing.id, { completed: event.target.checked }, editing.slot)} />Completed as planned</label><div className="drawer-actions"><button className="danger" type="button" onClick={deleteSegment}>Delete</button><button className="primary" type="button" onClick={() => setEditing(null)}>Done</button></div></section></div>}
   </main>;
 }
