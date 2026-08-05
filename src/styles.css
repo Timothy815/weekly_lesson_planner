@@ -52,8 +52,8 @@
 }
 
 @media print{
-  @page daily{size:portrait;margin:.32in}
-  .print-daily{page:daily}
+  @page{size:letter portrait;margin:.32in}
+  html,body,#root,.planner-app{height:auto!important;min-height:0!important}
   .print-daily .print-heading{margin-bottom:7px;padding-bottom:7px}
   .print-daily .print-heading>p:first-child{margin-bottom:3px;font-size:6pt}
   .print-daily .print-heading h1{font-size:17pt}
