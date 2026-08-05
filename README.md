@@ -1,6 +1,10 @@
 # Cybersecurity Weekly Lesson Planner
 
-An editable lesson planner for three daily 90-minute cybersecurity class slots. It includes the complete Monday–Friday routine, shortened-week controls, movable lesson cards, completion tracking, weekly planning notes, portable JSON backups, Markdown export, and printable daily or weekly records.
+An editable lesson planner for three daily 90-minute cybersecurity class slots. It includes the complete Monday–Friday routine, shortened-week controls, full-week and projection-friendly daily views, editable daily learning objectives, movable lesson cards, completion tracking, weekly planning notes, portable JSON backups, Markdown export, and printable daily or weekly records.
+
+## Daily view
+
+Use **Day view** in the planner controls, then select an active school day. Each class slot keeps its own learning objective for every day. The larger daily layout can be edited normally or expanded with **Enter full screen** for classroom projection.
 
 ## Local and portable data
 

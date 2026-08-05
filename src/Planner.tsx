@@ -17,6 +17,7 @@ type Planner = {
   activeDays: Day[];
   meta: WeekMeta;
   schedules: Record<Slot, Record<Day, Segment[]>>;
+  dailyObjectives: Record<Slot, Record<Day, string>>;
 };
 
 const STORAGE_KEY = "cybersecurity-weekly-planner-v1";
@@ -99,11 +100,21 @@ function currentMonday() {
 function freshSchedule(): Record<Day, Segment[]> {
   return Object.fromEntries(days.map((day) => [day, routine[day].map(([title, minutes, notes, category]) => ({ id: uid(), title, minutes, notes, category, completed: false }))])) as Record<Day, Segment[]>;
 }
+function freshObjectives(): Record<Day, string> {
+  return Object.fromEntries(days.map((day) => [day, ""])) as Record<Day, string>;
+}
 function defaultPlanner(): Planner {
   const meta = Object.fromEntries(["topic", "centralQuestion", "certificationObjectives", "article", "video", "mentalModel", "pythonConnection", "primaryLab", "evidence", "synthesisQuestion", "misconceptions", "scaffolding", "extension"].map((key) => [key, ""])) as WeekMeta;
-  return { schemaVersion: 1, weekOf: currentMonday(), activeDays: [...days], meta, schedules: { slot1: freshSchedule(), slot2: freshSchedule(), slot3: freshSchedule() } };
+  return {
+    schemaVersion: 1,
+    weekOf: currentMonday(),
+    activeDays: [...days],
+    meta,
+    schedules: { slot1: freshSchedule(), slot2: freshSchedule(), slot3: freshSchedule() },
+    dailyObjectives: { slot1: freshObjectives(), slot2: freshObjectives(), slot3: freshObjectives() },
+  };
 }
-function isPlanner(value: unknown): value is Planner {
+function isPlanner(value: unknown): value is Omit<Planner, "dailyObjectives"> & { dailyObjectives?: Planner["dailyObjectives"] } {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<Planner>;
   return candidate.schemaVersion === 1
@@ -114,7 +125,14 @@ function isPlanner(value: unknown): value is Planner {
     && !!candidate.meta
     && Object.values(candidate.meta).every((value) => typeof value === "string")
     && !!candidate.schedules
-    && slots.every((slot) => days.every((day) => Array.isArray(candidate.schedules?.[slot]?.[day])));
+    && slots.every((slot) => days.every((day) => Array.isArray(candidate.schedules?.[slot]?.[day])))
+    && (!candidate.dailyObjectives || slots.every((slot) => days.every((day) => typeof candidate.dailyObjectives?.[slot]?.[day] === "string")));
+}
+function normalizePlanner(value: ReturnType<typeof defaultPlanner> | (Omit<Planner, "dailyObjectives"> & { dailyObjectives?: Planner["dailyObjectives"] })): Planner {
+  return {
+    ...value,
+    dailyObjectives: Object.fromEntries(slots.map((slot) => [slot, Object.fromEntries(days.map((day) => [day, value.dailyObjectives?.[slot]?.[day] ?? ""]))])) as Planner["dailyObjectives"],
+  };
 }
 function range(start: number, duration: number) {
   const clock = (minutes: number) => `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
@@ -129,6 +147,9 @@ function dateForDay(weekOf: string, day: Day) {
 export default function Home() {
   const [planner, setPlanner] = useState<Planner>(() => defaultPlanner());
   const [activeSlot, setActiveSlot] = useState<Slot>("slot1");
+  const [viewMode, setViewMode] = useState<"week" | "day">("week");
+  const [selectedDay, setSelectedDay] = useState<Day>("monday");
+  const [presenting, setPresenting] = useState(false);
   const [editing, setEditing] = useState<{ slot: Slot; day: Day; id: string } | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
   const [daysOpen, setDaysOpen] = useState(false);
@@ -145,7 +166,7 @@ export default function Home() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed: unknown = JSON.parse(raw);
-        if (isPlanner(parsed)) setPlanner(parsed);
+        if (isPlanner(parsed)) setPlanner(normalizePlanner(parsed));
       }
     } catch {
       setNotice("The saved copy could not be read, so the routine template was opened instead.");
@@ -168,9 +189,17 @@ export default function Home() {
     return () => window.removeEventListener("afterprint", finish);
   }, []);
 
+  useEffect(() => {
+    const syncPresentation = () => setPresenting(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", syncPresentation);
+    return () => document.removeEventListener("fullscreenchange", syncPresentation);
+  }, []);
+
   const schedule = planner.schedules[activeSlot];
   const activeDays = days.filter((day) => planner.activeDays.includes(day));
-  const segments = activeDays.flatMap((day) => schedule[day]);
+  const visibleDays = viewMode === "day" ? [activeDays.includes(selectedDay) ? selectedDay : activeDays[0]] : activeDays;
+  const displayDays = printMode === "weekly" ? activeDays : visibleDays;
+  const segments = visibleDays.flatMap((day) => schedule[day]);
   const completed = segments.filter((item) => item.completed).length;
   const totalMinutes = segments.reduce((sum, item) => sum + item.minutes, 0);
   const progress = segments.length ? Math.round(completed / segments.length * 100) : 0;
@@ -182,6 +211,9 @@ export default function Home() {
 
   function updateMeta(key: keyof WeekMeta, value: string) {
     setPlanner((current) => ({ ...current, meta: { ...current.meta, [key]: value } }));
+  }
+  function updateObjective(day: Day, value: string, slot = activeSlot) {
+    setPlanner((current) => ({ ...current, dailyObjectives: { ...current.dailyObjectives, [slot]: { ...current.dailyObjectives[slot], [day]: value } } }));
   }
   function updateSegment(day: Day, id: string, patch: Partial<Segment>, slot = activeSlot) {
     setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [slot]: { ...current.schedules[slot], [day]: current.schedules[slot][day].map((item) => item.id === id ? { ...item, ...patch } : item) } } }));
@@ -221,10 +253,24 @@ export default function Home() {
       return { ...current, activeDays: days.filter((item) => next.includes(item)) };
     });
   }
+  function showDay(day: Day) {
+    setSelectedDay(day);
+    setPrintDay(day);
+    setViewMode("day");
+  }
+  async function togglePresentation() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else { setPresenting(true); await document.documentElement.requestFullscreen(); }
+    } catch {
+      setPresenting(false);
+      setNotice("Full screen is unavailable in this browser. The daily layout is still ready to project.");
+    }
+  }
   function copySlot(target: Slot) {
     if (!confirm(`Replace ${slotName[target]} with a copy of ${slotName[activeSlot]}?`)) return;
     const copy = Object.fromEntries(days.map((day) => [day, schedule[day].map((item) => ({ ...item, id: uid(), completed: false }))])) as Record<Day, Segment[]>;
-    setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [target]: copy } }));
+    setPlanner((current) => ({ ...current, schedules: { ...current.schedules, [target]: copy }, dailyObjectives: { ...current.dailyObjectives, [target]: { ...current.dailyObjectives[activeSlot] } } }));
     setNotice(`${slotName[activeSlot]} was copied to ${slotName[target]}.`);
   }
   function download(content: string, filename: string, type: string) {
@@ -241,6 +287,7 @@ export default function Home() {
       lines.push(`## ${slotName[slot]}`, "");
       activeDays.forEach((day) => {
         lines.push(`### ${dayName[day]} — ${dayInfo[day].focus}`, "");
+        lines.push(`**Learning objective:** ${planner.dailyObjectives[slot][day] || "Not set"}`, "");
         let elapsed = 0;
         planner.schedules[slot][day].forEach((item) => {
           const time = range(elapsed, item.minutes); elapsed += item.minutes;
@@ -256,7 +303,7 @@ export default function Home() {
     try {
       const parsed: unknown = JSON.parse(await file.text());
       if (!isPlanner(parsed)) throw new Error("invalid");
-      setPlanner(parsed); setEditing(null); setNotice(`Imported ${file.name}. It is now saved on this device.`);
+      setPlanner(normalizePlanner(parsed)); setEditing(null); setNotice(`Imported ${file.name}. It is now saved on this device.`);
     } catch { setNotice("That file is not a valid planner JSON export. No schedule was changed."); }
   }
   function printPlan(mode: "weekly" | "daily") {
@@ -287,7 +334,7 @@ export default function Home() {
     ["extension", "Extension opportunity", "A meaningful next challenge"],
   ];
 
-  return <main className={`planner-app print-${printMode}`}>
+  return <main className={`planner-app view-${viewMode} ${presenting ? "projection-mode" : ""} print-${printMode}`}>
     <header className="site-header screen-only">
       <a className="brand" href="#top"><span className="logo" aria-hidden="true">CS</span><span><strong>CYBER / PLANNER</strong><small>Weekly operations desk</small></span></a>
       <div className="save-state"><i />{saveLabel}</div>
@@ -301,6 +348,10 @@ export default function Home() {
     <section className="control-deck screen-only" aria-label="Planner controls">
       <div className="slot-tabs" role="tablist">{slots.map((slot) => <button key={slot} role="tab" aria-selected={activeSlot === slot} className={activeSlot === slot ? "active" : ""} onClick={() => setActiveSlot(slot)}>{slotName[slot]}</button>)}</div>
       <div className="control-actions">
+        <div className="view-toggle" aria-label="Schedule view">
+          <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => setViewMode("week")}>Full week</button>
+          <button type="button" className={viewMode === "day" ? "active" : ""} aria-pressed={viewMode === "day"} onClick={() => showDay(activeDays.includes(selectedDay) ? selectedDay : activeDays[0])}>Day view</button>
+        </div>
         <button type="button" onClick={() => setDaysOpen((open) => !open)}>School days <span>{activeDays.length}/5</span></button>
         <button type="button" onClick={() => setBriefOpen(true)}>Weekly brief</button>
         <button type="button" onClick={exportJson}>Export JSON</button>
@@ -318,21 +369,28 @@ export default function Home() {
       {daysOpen && <div className="day-picker"><span>Days in this school week</span>{days.map((day) => <label key={day}><input type="checkbox" checked={planner.activeDays.includes(day)} onChange={() => toggleDay(day)} />{dayName[day]}</label>)}</div>}
     </section>
 
+    {viewMode === "day" && <nav className="day-view-nav screen-only" aria-label="Choose day to display">
+      <span>Present a day</span>
+      <div>{activeDays.map((day) => <button key={day} type="button" className={visibleDays[0] === day ? "active" : ""} aria-current={visibleDays[0] === day ? "page" : undefined} onClick={() => showDay(day)}><small>{dateForDay(planner.weekOf, day)}</small>{dayName[day]}</button>)}</div>
+      <button className="projection-action" type="button" onClick={togglePresentation}>{presenting ? "Exit presentation" : "Enter full screen"}</button>
+    </nav>}
+
     {notice && <div className="notice screen-only" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss">×</button></div>}
     <section className="status-strip screen-only">
-      <div><span>Active schedule</span><strong>{slotName[activeSlot]}</strong></div><div><span>Planned airtime</span><strong>{totalMinutes} minutes</strong></div><div><span>Segments complete</span><strong>{completed} / {segments.length}</strong></div><div className="progress-stat"><span>Weekly progress</span><strong>{progress}%</strong><i><b style={{ width: `${progress}%` }} /></i></div>
+      <div><span>Active schedule</span><strong>{slotName[activeSlot]}</strong></div><div><span>{viewMode === "day" ? `${dayName[visibleDays[0]]} airtime` : "Planned airtime"}</span><strong>{totalMinutes} minutes</strong></div><div><span>Segments complete</span><strong>{completed} / {segments.length}</strong></div><div className="progress-stat"><span>{viewMode === "day" ? "Daily progress" : "Weekly progress"}</span><strong>{progress}%</strong><i><b style={{ width: `${progress}%` }} /></i></div>
     </section>
 
-    <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}</div>
+    <div className="print-heading"><p>Cybersecurity Weekly Lesson Planner</p><h1>{planner.meta.topic || weekLabel}</h1><div><span>{weekLabel}</span><span>{slotName[activeSlot]}</span><span>{printMode === "daily" ? dayName[printDay] : `${activeDays.length}-day school week`}</span></div>{planner.meta.centralQuestion && <p className="print-question">Central question: {planner.meta.centralQuestion}</p>}{printMode === "daily" && planner.dailyObjectives[activeSlot][printDay] && <p className="print-objective"><strong>Learning objective:</strong> {planner.dailyObjectives[activeSlot][printDay]}</p>}</div>
 
     <section className="schedule-section">
-      <div className="schedule-title screen-only"><div><p className="eyebrow">01 // Broadcast board</p><h2>{weekLabel}</h2></div><p>Drag a segment to another day or position. Use the arrow controls when working by keyboard or touch.</p></div>
-      <div className={`schedule-board columns-${activeDays.length}`}>
-        {activeDays.map((day) => {
+      <div className="schedule-title screen-only"><div><p className="eyebrow">01 // {viewMode === "day" ? "Daily plan" : "Broadcast board"}</p><h2>{viewMode === "day" ? `${dayName[visibleDays[0]]}, ${dateForDay(planner.weekOf, visibleDays[0])}` : weekLabel}</h2></div><p>{viewMode === "day" ? "Edit the learning objective and lesson segments here, or use full screen to present the plan to your class." : "Drag a segment to another day or position. Use the arrow controls when working by keyboard or touch."}</p></div>
+      <div className={`schedule-board columns-${displayDays.length} ${viewMode === "day" ? "daily-view-board" : ""}`}>
+        {displayDays.map((day) => {
           let elapsed = 0; const items = schedule[day]; const minutes = items.reduce((sum, item) => sum + item.minutes, 0);
           return <article className={`day-column ${printMode === "daily" && day === printDay ? "print-target" : ""}`} key={day} data-day={day} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (dragSource.current) moveSegment(dragSource.current, day, items.length); dragSource.current = null; }}>
             <header><div><span>{dateForDay(planner.weekOf, day)}</span><strong>{dayName[day]}</strong><small>{dayInfo[day].focus}</small></div><b className={minutes === 90 ? "on-time" : minutes > 90 ? "over" : "under"}>{minutes}<small>/90</small></b></header>
-            <p className="day-outcome">{dayInfo[day].outcome}</p>
+            <div className="objective-panel"><label htmlFor={`objective-${activeSlot}-${day}`}>Learning objective</label><textarea id={`objective-${activeSlot}-${day}`} rows={viewMode === "day" ? 3 : 2} value={planner.dailyObjectives[activeSlot][day]} placeholder="Students will be able to…" onChange={(event) => updateObjective(day, event.target.value)} /></div>
+            <p className="day-outcome"><strong>Suggested outcome</strong>{dayInfo[day].outcome}</p>
             <div className="segment-list">{items.map((item, index) => {
               const start = elapsed; elapsed += item.minutes;
               return <div className={`segment-card category-${item.category.toLowerCase()} ${item.completed ? "completed" : ""}`} draggable key={item.id} onDragStart={(event: DragEvent<HTMLDivElement>) => { dragSource.current = { slot: activeSlot, day, id: item.id }; event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); if (dragSource.current) moveSegment(dragSource.current, day, index); dragSource.current = null; }}>
