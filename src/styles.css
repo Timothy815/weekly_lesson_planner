@@ -115,25 +115,24 @@
   .print-summary-context article{padding:6px 8px;background:#f7fafa;border:1px solid #ccd6da;break-inside:avoid}
   .print-summary-context article strong{color:var(--ink2);font:700 6.5pt "Courier New",monospace;text-transform:uppercase}
   .print-summary-context article p{margin:2px 0 0;font-size:7pt;line-height:1.3}
-  .print-summary-days{margin-top:12px;columns:2;column-gap:12px}
-  .print-summary-day{margin:0 0 10px;display:inline-block;width:100%;background:white;border:1px solid #ccd6da;break-inside:avoid}
-  .print-summary-day>header{padding:7px 9px;display:flex;justify-content:space-between;gap:10px;color:white;background:var(--ink);border-top:3px solid var(--cyan)}
-  .print-summary-day>header span{color:var(--cyan);font:700 5.8pt "Courier New",monospace;text-transform:uppercase}
-  .print-summary-day>header h2{margin:1px 0 0;font:400 12pt Georgia,serif}
-  .print-summary-day>header>strong{align-self:center;padding:3px 6px;color:var(--ink);background:var(--mint);font:700 6.5pt "Courier New",monospace;white-space:nowrap}
-  .print-summary-targets{padding:6px 9px;background:#eef3f4;border-bottom:1px solid #dbe2e5}
-  .print-summary-targets p{margin:2px 0;font-size:6.8pt;line-height:1.3}
-  .print-summary-day>ol{margin:0;padding:5px 8px;list-style:none}
-  .print-summary-day>ol>li{padding:4px 0;border-bottom:1px solid #e4e9eb;break-inside:avoid}
+  .print-summary-days{margin-top:12px}
+  .print-summary-day{margin:0 0 10px;display:block;width:100%;background:white;border:1px solid #ccd6da;break-inside:avoid}
+  .print-summary-day>header{padding:8px 12px;display:flex;justify-content:space-between;gap:10px;color:white;background:var(--ink);border-top:3px solid var(--cyan)}
+  .print-summary-day>header span{color:var(--cyan);font:700 7pt "Courier New",monospace;text-transform:uppercase}
+  .print-summary-day>header h2{margin:1px 0 0;font:400 14pt Georgia,serif}
+  .print-summary-day>header>strong{align-self:center;padding:3px 8px;color:var(--ink);background:var(--mint);font:700 7.5pt "Courier New",monospace;white-space:nowrap}
+  .print-summary-targets{padding:7px 12px;background:#eef3f4;border-bottom:1px solid #dbe2e5}
+  .print-summary-targets p{margin:2px 0;font-size:8pt;line-height:1.35}
+  .print-summary-day>ol{margin:0;padding:6px 12px;list-style:none}
+  .print-summary-day>ol>li{padding:5px 0;border-bottom:1px solid #e4e9eb;break-inside:avoid}
   .print-summary-day>ol>li:last-child{border:0}
-  .print-summary-day>ol>li>div{display:grid;grid-template-columns:80px minmax(0,1fr) auto;gap:6px;align-items:baseline}
-  .print-summary-day>ol>li>div span,.print-summary-day>ol>li>div small{color:var(--cyan2);font:400 5.6pt "Courier New",monospace}
-  .print-summary-day>ol>li>div strong{font-size:7pt}
-  .print-summary-day>ol ul{margin:2px 0 0 86px;padding:0;list-style:none}
-  .print-summary-day>ol ul li{color:#5c7079;font-size:5.6pt;line-height:1.3;overflow-wrap:anywhere}
+  .print-summary-day>ol>li>div{display:grid;grid-template-columns:100px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+  .print-summary-day>ol>li>div span,.print-summary-day>ol>li>div small{color:var(--cyan2);font:400 6.8pt "Courier New",monospace}
+  .print-summary-day>ol>li>div strong{font-size:9pt}
+  .print-summary-day>ol ul{margin:2px 0 0 110px;padding:0;list-style:none}
+  .print-summary-day>ol ul li{color:#5c7079;font-size:7pt;line-height:1.35;overflow-wrap:anywhere}
 
   @media(orientation:landscape){
     .segment-list{grid-template-columns:repeat(2,1fr)}
-    .print-summary-days{columns:3}
   }
 }
