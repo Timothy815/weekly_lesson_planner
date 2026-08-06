@@ -5,7 +5,7 @@
 
 .planner-hero{min-height:360px;padding:58px clamp(22px,6vw,90px);display:grid;grid-template-columns:1.2fr .8fr;align-items:center;gap:clamp(36px,7vw,100px);position:relative;overflow:hidden;color:white;background:radial-gradient(circle at 80% 18%,#35d9ff22,transparent 28%),linear-gradient(135deg,#07111f,#0b1c2d)}.planner-hero:before{content:"";position:absolute;inset:0;opacity:.2;background-image:linear-gradient(#429bbf30 1px,transparent 1px),linear-gradient(90deg,#429bbf30 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to right,transparent 5%,black 70%)}.planner-hero>*{position:relative;z-index:1}.eyebrow{margin:0 0 13px;color:var(--cyan2);font:700 10px "Courier New",monospace;text-transform:uppercase;letter-spacing:.14em}.planner-hero .eyebrow{color:var(--cyan)}.planner-hero h1{margin:0;font:400 clamp(48px,6vw,82px)/.97 Georgia,serif;letter-spacing:-.045em}.planner-hero h1 em{color:var(--cyan);font-weight:400}.planner-hero>div>p:last-child{max-width:680px;margin:22px 0 0;color:#a8bac7;font-size:16px;line-height:1.7}.week-brief{background:#081623d9;border:1px solid #6eb4d155;box-shadow:0 30px 70px #0005}.week-brief>span{padding:13px 17px;display:block;color:#7f94a4;border-bottom:1px solid #ffffff16;font:700 9px "Courier New",monospace;text-transform:uppercase;letter-spacing:.12em}.week-brief label{padding:24px 25px 0;display:grid;gap:7px;color:#8196a5;font:700 9px "Courier New",monospace;text-transform:uppercase}.week-brief input{padding:10px;color:white;background:#ffffff0b;border:1px solid #ffffff25;color-scheme:dark}.week-brief strong{min-height:80px;padding:17px 25px;display:block;font:400 25px/1.15 Georgia,serif}.week-brief button{width:100%;padding:15px 25px;display:flex;justify-content:space-between;color:var(--cyan);background:transparent;border:0;border-top:1px solid #ffffff16;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.1em}
 
-.control-deck{padding:18px clamp(18px,4vw,64px);position:sticky;top:78px;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:20px;color:white;background:var(--ink2);box-shadow:0 10px 30px #07111f24}.slot-tabs{display:flex;gap:6px}.slot-tabs button,.control-actions>button,.more-menu>summary{min-height:38px;padding:0 13px;color:#91a5b4;background:transparent;border:1px solid #ffffff24;list-style:none;font:700 9px "Courier New",monospace;text-transform:uppercase;letter-spacing:.07em}.slot-tabs button{display:grid;place-content:center;gap:2px}.slot-tabs button small{color:#67808f;font:700 7px "Courier New",monospace}.slot-tabs button:hover,.slot-tabs button.active{color:var(--ink);background:var(--cyan);border-color:var(--cyan)}.slot-tabs button:hover small,.slot-tabs button.active small{color:#31525f}.control-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}.control-actions>button:hover,.more-menu>summary:hover{color:var(--cyan);border-color:#35d9ff88}.control-actions button span{margin-left:5px;color:var(--cyan)}.more-menu{position:relative}.more-menu>summary{display:grid;place-items:center}.more-menu>summary::-webkit-details-marker{display:none}.more-menu>div{width:255px;padding:7px;position:absolute;top:calc(100% + 8px);right:0;z-index:45;display:grid;gap:4px;color:var(--ink);background:white;border:1px solid var(--line);box-shadow:0 18px 50px #07111f35}.more-menu>div button,.more-menu>div label{padding:10px;color:var(--ink);background:transparent;border:0;text-align:left;font-size:11px}.more-menu>div button:hover{background:#e8f5f7}.more-menu>div label{display:grid;gap:6px;color:var(--muted);font:700 9px "Courier New",monospace;text-transform:uppercase}.more-menu select{padding:7px;border:1px solid var(--line)}.more-menu .danger{color:#a7352a}.day-picker{padding:13px 16px;position:absolute;top:calc(100% + 8px);right:clamp(18px,4vw,64px);display:flex;gap:16px;align-items:center;color:var(--ink);background:white;border:1px solid var(--line);box-shadow:0 18px 50px #07111f2b}.day-picker>span{color:var(--muted);font:700 9px "Courier New",monospace;text-transform:uppercase}.day-picker label{display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700}.day-picker input{accent-color:var(--cyan2)}.notice{max-width:850px;margin:16px auto 0;padding:11px 14px;display:flex;justify-content:space-between;gap:20px;color:#35515e;background:#dff5f7;border-left:3px solid var(--cyan2);font-size:12px}.notice button{color:inherit;background:transparent;border:0;font-size:18px}
+.control-deck{padding:18px clamp(18px,4vw,64px);position:sticky;top:78px;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:20px;color:white;background:var(--ink2);box-shadow:0 10px 30px #07111f24}.slot-tabs{display:flex;gap:6px}.slot-tabs button,.control-actions>button,.more-menu>summary{min-height:38px;padding:0 13px;color:#91a5b4;background:transparent;border:1px solid #ffffff24;list-style:none;font:700 9px "Courier New",monospace;text-transform:uppercase;letter-spacing:.07em}.slot-tabs button{display:grid;place-content:center;gap:2px}.slot-tabs button small{color:#67808f;font:700 7px "Courier New",monospace}.slot-tabs button:hover,.slot-tabs button.active{color:var(--ink);background:var(--cyan);border-color:var(--cyan)}.slot-tabs button:hover small,.slot-tabs button.active small{color:#31525f}.control-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}.control-actions>button:hover,.more-menu>summary:hover{color:var(--cyan);border-color:#35d9ff88}.control-actions button span{margin-left:5px;color:var(--cyan)}.more-menu{position:relative}.more-menu>summary{display:grid;place-items:center}.more-menu>summary::-webkit-details-marker{display:none}.more-menu>div{width:255px;padding:7px;position:absolute;top:calc(100% + 8px);right:0;z-index:45;display:grid;gap:4px;color:var(--ink);background:white;border:1px solid var(--line);box-shadow:0 18px 50px #07111f35}.more-menu>div button,.more-menu>div label{padding:10px;color:var(--ink);background:transparent;border:0;text-align:left;font-size:11px}.more-menu>div button:hover{background:#e8f5f7}.more-menu>div label{display:grid;gap:6px;color:var(--muted);font:700 9px "Courier New",monospace;text-transform:uppercase}.more-menu select{padding:7px;border:1px solid var(--line)}.orientation-picker{display:flex;gap:4px}.orientation-picker button{flex:1;padding:7px;color:var(--muted);background:white;border:1px solid var(--line);font:700 8px "Courier New",monospace;text-transform:uppercase}.orientation-picker button.active{color:var(--ink);background:var(--cyan);border-color:var(--cyan)}.drawer-actions .drawer-orientation{margin-right:auto;max-width:220px}.more-menu .danger{color:#a7352a}.day-picker{padding:13px 16px;position:absolute;top:calc(100% + 8px);right:clamp(18px,4vw,64px);display:flex;gap:16px;align-items:center;color:var(--ink);background:white;border:1px solid var(--line);box-shadow:0 18px 50px #07111f2b}.day-picker>span{color:var(--muted);font:700 9px "Courier New",monospace;text-transform:uppercase}.day-picker label{display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700}.day-picker input{accent-color:var(--cyan2)}.notice{max-width:850px;margin:16px auto 0;padding:11px 14px;display:flex;justify-content:space-between;gap:20px;color:#35515e;background:#dff5f7;border-left:3px solid var(--cyan2);font-size:12px}.notice button{color:inherit;background:transparent;border:0;font-size:18px}
 
 .status-strip{padding:17px clamp(22px,5vw,76px);display:grid;grid-template-columns:repeat(4,1fr);gap:20px;color:#8196a5;background:#e7edef;border-bottom:1px solid var(--line)}.status-strip>div{min-width:0;padding-right:20px;display:grid;gap:2px;border-right:1px solid #cbd7dc}.status-strip>div:last-child{border:0}.status-strip span{font:700 8px "Courier New",monospace;text-transform:uppercase;letter-spacing:.08em}.status-strip strong{font-size:12px}.progress-stat{grid-template-columns:1fr auto}.progress-stat>i{height:3px;grid-column:1/-1;overflow:hidden;background:#c6d1d5}.progress-stat>i b{height:100%;display:block;background:var(--cyan2);transition:width .25s ease}
 
@@ -47,38 +47,93 @@
 @media(max-width:760px){.brief-report-hero{padding:20px;grid-template-columns:1fr}.brief-report-stats{grid-template-columns:repeat(4,1fr)}.brief-report-stats>div{padding-inline:3px}.brief-context>div,.brief-section-heading,.brief-day-targets{grid-template-columns:1fr}.brief-day-targets>div{border-right:0;border-bottom:1px solid #d7e0e2}.brief-day-targets>div:last-child{border-bottom:0}.brief-activity-list li,.brief-activity-list li>div{grid-template-columns:1fr}.brief-activity-list li>div{gap:3px}.brief-activity-list nav{justify-content:flex-start}}
 
 @media print{
-  .print-summary .print-heading,.print-summary .schedule-section,.print-summary .weekly-notes{display:none!important}.print-summary .print-weekly-summary{display:block}.print-weekly-summary>header{padding-bottom:10px;border-bottom:2px solid #111}.print-weekly-summary>header>p:first-child{margin:0 0 5px;font:700 7pt "Courier New",monospace;text-transform:uppercase}.print-weekly-summary>header h1{margin:0;font:400 22pt/1.05 Georgia,serif}.print-weekly-summary>header>div{margin-top:7px;display:flex;gap:20px;font:700 7pt "Courier New",monospace;text-transform:uppercase}.print-weekly-summary>header>p:last-child{margin:7px 0 0;font-size:8pt}.print-summary-context{margin-top:10px}.print-summary-context h2{margin:0 0 5px;font:700 7pt "Courier New",monospace;text-transform:uppercase}.print-summary-context>div{display:grid;grid-template-columns:1fr 1fr;gap:4px}.print-summary-context article{padding:5px 6px;border:1px solid #bbb;break-inside:avoid}.print-summary-context article strong{font:700 6pt "Courier New",monospace;text-transform:uppercase}.print-summary-context article p{margin:2px 0 0;font-size:6.5pt;line-height:1.25}.print-summary-days{margin-top:10px;columns:2;column-gap:10px}.print-summary-day{margin:0 0 9px;display:inline-block;width:100%;border:1px solid #999;break-inside:avoid}.print-summary-day>header{padding:6px 8px;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #999}.print-summary-day>header span{font:700 5.5pt "Courier New",monospace;text-transform:uppercase}.print-summary-day>header h2{margin:1px 0 0;font:400 11pt Georgia,serif}.print-summary-day>header>strong{font:700 6pt "Courier New",monospace;white-space:nowrap}.print-summary-targets{padding:5px 8px;border-bottom:1px solid #bbb}.print-summary-targets p{margin:2px 0;font-size:6.5pt;line-height:1.25}.print-summary-day>ol{margin:0;padding:4px 7px;list-style:none}.print-summary-day>ol>li{padding:3px 0;border-bottom:1px solid #ddd;break-inside:avoid}.print-summary-day>ol>li:last-child{border:0}.print-summary-day>ol>li>div{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:6px;align-items:baseline}.print-summary-day>ol>li>div span,.print-summary-day>ol>li>div small{font:400 5.5pt "Courier New",monospace}.print-summary-day>ol>li>div strong{font-size:6.8pt}.print-summary-day>ol ul{margin:2px 0 0 84px;padding:0;list-style:none}.print-summary-day>ol ul li{font-size:5.5pt;line-height:1.25;overflow-wrap:anywhere}
-  @page{size:landscape;margin:.35in}body{background:white;color:#111}.screen-only{display:none!important}.planner-app{min-height:auto}.print-heading{margin-bottom:18px;padding-bottom:12px;display:block;border-bottom:2px solid #111}.print-heading>p:first-child{margin:0 0 6px;font:700 8pt "Courier New",monospace;text-transform:uppercase}.print-heading h1{margin:0;font:400 23pt/1.05 Georgia,serif}.print-heading>div{margin-top:8px;display:flex;gap:25px;font:700 8pt "Courier New",monospace;text-transform:uppercase}.print-question,.print-objective{margin:9px 0 0;font-size:9pt}.schedule-section{padding:0}.schedule-board,.schedule-board.columns-4,.schedule-board.columns-3,.schedule-board.columns-2,.schedule-board.columns-1{display:grid;grid-template-columns:repeat(auto-fit,minmax(1.7in,1fr))!important;gap:7px;overflow:visible;padding:0}.day-column{break-inside:avoid;box-shadow:none}.day-column>header{min-height:55px;padding:8px;border-top-width:3px}.day-column>header strong{font-size:13pt}.day-column>header small,.day-outcome,.day-column>footer{display:none}.day-column>header>b{min-width:35px;padding:4px;font-size:9pt}.objective-panel{padding:5px 7px}.objective-panel label{font-size:5.5pt}.objective-panel textarea{padding:3px;border:0;background:transparent;resize:none;font-size:6.5pt;line-height:1.2}.segment-list,.daily-view-board .segment-list{min-height:0;padding:4px;display:grid;grid-template-columns:1fr;gap:3px}.segment-card{break-inside:avoid;border-left-width:2px}.segment-time{min-height:0;padding:2px 4px;font-size:5.5pt}.segment-main{padding:4px;display:block}.complete-check{display:none}.segment-copy{display:block}.segment-copy small{display:block;font-size:5pt}.segment-copy strong{display:block;font-size:7.3pt;line-height:1.2}.segment-copy span{display:block;margin-top:2px;font-size:5.8pt;line-height:1.25}.segment-resources{padding-top:2px;gap:2px}.segment-resources a{padding:1px 3px;color:#111;background:white;border-color:#aaa;font-size:5pt}.segment-card.completed .segment-copy strong:before{content:"✓ ";text-decoration:none}.weekly-notes{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:7px}.weekly-notes>div{padding:7px;border:1px solid #aaa;break-inside:avoid}.weekly-notes span{font:700 6pt "Courier New",monospace;text-transform:uppercase}.weekly-notes p{margin:3px 0 0;font-size:7pt}.print-daily .schedule-board{display:block!important}.print-daily .day-column:not(.print-target){display:none}.print-daily .day-column.print-target{max-width:8.8in;margin:auto}.print-daily .day-column>header{min-height:72px;padding:12px 15px}.print-daily .day-column>header strong{font-size:20pt}.print-daily .day-column>header small,.print-daily .day-outcome,.print-daily .day-column>footer{display:block}.print-daily .objective-panel{padding:7px 12px}.print-daily .objective-panel textarea{font-size:8pt}.print-daily .day-outcome{min-height:auto;padding:8px 12px;font-size:8pt}.print-daily .segment-list{padding:7px;gap:5px}.print-daily .segment-main{padding:6px 8px}.print-daily .segment-copy strong{font-size:9pt}.print-daily .segment-copy span{font-size:7.5pt}.print-daily .day-column>footer{min-height:auto;padding:9px 12px;color:#333;background:#eee}.print-daily .day-column>footer p{font-size:7.5pt}.print-daily .weekly-notes{display:none}
-}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:11in 8.5in;margin:.4in}
+  html,body,#root,.planner-app{height:auto!important;min-height:0!important;background:#fff;color:var(--ink)}
+  .screen-only{display:none!important}
+  .schedule-section{padding:0}
 
-@media print{
-  @page{size:letter portrait;margin:.32in}
-  html,body,#root,.planner-app{height:auto!important;min-height:0!important}
-  .print-daily .print-heading{margin-bottom:7px;padding-bottom:7px}
-  .print-daily .print-heading>p:first-child{margin-bottom:3px;font-size:6pt}
-  .print-daily .print-heading h1{font-size:17pt}
-  .print-daily .print-heading>div{margin-top:5px;gap:14px;font-size:6pt}
-  .print-daily .print-question,.print-daily .print-objective{margin-top:5px;font-size:6.5pt}
-  .print-daily .schedule-board{max-width:none!important}
-  .print-daily .day-column{width:100%;max-width:none;margin:0;break-inside:auto;box-shadow:none}
-  .print-daily .day-column>header{min-height:48px;padding:7px 10px}
-  .print-daily .day-column>header strong{font-size:16pt}
-  .print-daily .day-column>header small{font-size:6pt}
-  .print-daily .day-column>header>b{padding:3px;font-size:8pt}
-  .print-daily .objective-panel{padding:5px 9px}
-  .print-daily .objective-panel label{font-size:5pt}
-  .print-daily .objective-panel textarea,.print-daily .objective-copy{min-height:0;padding:2px 0;font-size:6.5pt;line-height:1.15}
-  .print-daily .day-outcome{padding:5px 9px;font-size:6.5pt;line-height:1.2}
-  .print-daily .day-outcome strong{font-size:5pt}
-  .print-daily .day-outcome p{margin-top:2px;font-size:7pt;line-height:1.2}
-  .print-daily .segment-list{padding:5px;gap:3px}
-  .print-daily .segment-card{break-inside:avoid}
-  .print-daily .segment-time{padding:2px 5px;font-size:5pt}
-  .print-daily .segment-main{padding:3px 6px}
-  .print-daily .segment-copy small{font-size:4.5pt}
-  .print-daily .segment-copy strong{font-size:7pt;line-height:1.1}
-  .print-daily .segment-copy span{margin-top:1px;font-size:5.7pt;line-height:1.15}
-  .print-daily .day-column>footer{padding:5px 9px}
-  .print-daily .day-column>footer span{font-size:5pt}
-  .print-daily .day-column>footer p{margin-top:3px;font-size:6.5pt;line-height:1.2}
+  .print-heading{margin-bottom:14px;padding-bottom:10px;display:block;break-after:avoid;border-bottom:2px solid var(--ink)}
+  .print-heading>p:first-child{margin:0 0 5px;color:var(--cyan2);font:700 8pt "Courier New",monospace;text-transform:uppercase;letter-spacing:.1em}
+  .print-heading h1{margin:0;font:400 24pt/1.05 Georgia,serif;letter-spacing:-.02em}
+  .print-heading>div{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+  .print-heading>div span{padding:3px 8px;color:white;background:var(--ink2);font:700 7.5pt "Courier New",monospace;text-transform:uppercase;letter-spacing:.06em}
+  .print-question,.print-objective{margin:8px 0 0;padding:6px 9px;background:#eaf7fb;border-left:3px solid var(--cyan2);font-size:9pt;line-height:1.35;color:#1c3540}
+  .print-question strong,.print-objective strong{color:var(--ink2)}
+  .print-objective{background:#eefaf4;border-left-color:#2fae7c}
+
+  /* Every day prints as one full-width, full-detail block — never a side-by-side grid — so it reads like the daily view. */
+  .schedule-board,.schedule-board.columns-5,.schedule-board.columns-4,.schedule-board.columns-3,.schedule-board.columns-2,.schedule-board.columns-1{display:block!important;padding:0}
+  .day-column{max-width:none;margin:0 0 16px;break-inside:auto;background:white;border:1px solid #ccd6da;box-shadow:none}
+  .print-weekly .day-column{break-before:page}
+  .print-weekly .day-column:first-child{break-before:auto}
+  .day-column>header{min-height:64px;padding:12px 16px;break-inside:avoid;break-after:avoid}
+  .day-column>header strong{font-size:21pt}
+  .day-column>header small{display:block;font-size:8pt;color:#b8c8d2}
+  .day-column>header>b{min-width:48px;padding:6px;font-size:11pt}
+  .day-outcome{display:block;min-height:0;padding:8px 16px;font-size:8.5pt;line-height:1.4;break-inside:avoid;break-after:avoid}
+  .objective-panel{padding:9px 16px;break-inside:avoid;break-after:avoid}
+  .objective-panel label{font-size:6.5pt}
+  .objective-panel textarea,.objective-copy{padding:2px 0;border:0;background:transparent;resize:none;font-size:9pt;line-height:1.4}
+  .segment-list,.daily-view-board .segment-list{min-height:0;padding:8px;display:grid;grid-template-columns:1fr;gap:6px}
+  .segment-card{break-inside:avoid;border-left-width:4px;box-shadow:none}
+  .segment-time{min-height:0;padding:4px 8px;font-size:7pt}
+  .segment-main{padding:8px 10px;display:block}
+  .complete-check{display:none}
+  .segment-copy{display:block;width:100%}
+  .segment-copy small{display:block;font-size:6.5pt}
+  .segment-copy strong{display:block;font-size:10.5pt;line-height:1.25}
+  .segment-copy span{display:block;margin-top:2px;font-size:8.5pt;line-height:1.35}
+  .segment-card.completed{background:#f7faf8}
+  .segment-card.completed .segment-copy strong:before{content:"✓ ";color:#1f9c6a;text-decoration:none}
+  .segment-resources{padding-top:3px;gap:3px}
+  .segment-resources a{padding:3px 6px;color:var(--ink);background:white;border-color:#b9c7cc;font-size:7pt}
+  .day-column>footer{display:block;padding:11px 16px;color:#20343e;background:#e4edef;break-inside:avoid}
+  .day-column>footer span{color:var(--cyan2);font-size:6.5pt}
+  .day-column>footer p{margin-top:4px;font-size:8.5pt;line-height:1.4}
+
+  .weekly-notes{margin-top:0;padding-top:4px;display:grid;grid-template-columns:1fr 1fr;gap:8px;break-inside:avoid}
+  .print-weekly .weekly-notes{break-before:page}
+  .weekly-notes>div{padding:8px 10px;background:#f7fafa;border:1px solid #ccd6da;break-inside:avoid}
+  .weekly-notes span{color:var(--cyan2);font:700 6.5pt "Courier New",monospace;text-transform:uppercase}
+  .weekly-notes p{margin:4px 0 0;font-size:7.5pt;line-height:1.35}
+
+  .print-daily .day-column:not(.print-target){display:none}
+  .print-daily .weekly-notes{display:none}
+
+  .print-summary .print-heading,.print-summary .schedule-section,.print-summary .weekly-notes{display:none!important}
+  .print-summary .print-weekly-summary{display:block}
+  .print-weekly-summary>header{padding-bottom:10px;border-bottom:2px solid var(--ink)}
+  .print-weekly-summary>header>p:first-child{margin:0 0 5px;color:var(--cyan2);font:700 7.5pt "Courier New",monospace;text-transform:uppercase}
+  .print-weekly-summary>header h1{margin:0;font:400 22pt/1.05 Georgia,serif}
+  .print-weekly-summary>header>div{margin-top:7px;display:flex;gap:8px;flex-wrap:wrap}
+  .print-weekly-summary>header>div span{padding:3px 8px;color:white;background:var(--ink2);font:700 7pt "Courier New",monospace;text-transform:uppercase}
+  .print-weekly-summary>header>p:last-child{margin:8px 0 0;padding:6px 9px;background:#eefaf4;border-left:3px solid #2fae7c;font-size:8.5pt}
+  .print-summary-context{margin-top:12px}
+  .print-summary-context h2{margin:0 0 6px;color:var(--cyan2);font:700 7.5pt "Courier New",monospace;text-transform:uppercase}
+  .print-summary-context>div{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .print-summary-context article{padding:6px 8px;background:#f7fafa;border:1px solid #ccd6da;break-inside:avoid}
+  .print-summary-context article strong{color:var(--ink2);font:700 6.5pt "Courier New",monospace;text-transform:uppercase}
+  .print-summary-context article p{margin:2px 0 0;font-size:7pt;line-height:1.3}
+  .print-summary-days{margin-top:12px;columns:2;column-gap:12px}
+  .print-summary-day{margin:0 0 10px;display:inline-block;width:100%;background:white;border:1px solid #ccd6da;break-inside:avoid}
+  .print-summary-day>header{padding:7px 9px;display:flex;justify-content:space-between;gap:10px;color:white;background:var(--ink);border-top:3px solid var(--cyan)}
+  .print-summary-day>header span{color:var(--cyan);font:700 5.8pt "Courier New",monospace;text-transform:uppercase}
+  .print-summary-day>header h2{margin:1px 0 0;font:400 12pt Georgia,serif}
+  .print-summary-day>header>strong{align-self:center;padding:3px 6px;color:var(--ink);background:var(--mint);font:700 6.5pt "Courier New",monospace;white-space:nowrap}
+  .print-summary-targets{padding:6px 9px;background:#eef3f4;border-bottom:1px solid #dbe2e5}
+  .print-summary-targets p{margin:2px 0;font-size:6.8pt;line-height:1.3}
+  .print-summary-day>ol{margin:0;padding:5px 8px;list-style:none}
+  .print-summary-day>ol>li{padding:4px 0;border-bottom:1px solid #e4e9eb;break-inside:avoid}
+  .print-summary-day>ol>li:last-child{border:0}
+  .print-summary-day>ol>li>div{display:grid;grid-template-columns:80px minmax(0,1fr) auto;gap:6px;align-items:baseline}
+  .print-summary-day>ol>li>div span,.print-summary-day>ol>li>div small{color:var(--cyan2);font:400 5.6pt "Courier New",monospace}
+  .print-summary-day>ol>li>div strong{font-size:7pt}
+  .print-summary-day>ol ul{margin:2px 0 0 86px;padding:0;list-style:none}
+  .print-summary-day>ol ul li{color:#5c7079;font-size:5.6pt;line-height:1.3;overflow-wrap:anywhere}
+
+  @media(orientation:landscape){
+    .segment-list{grid-template-columns:repeat(2,1fr)}
+    .print-summary-days{columns:3}
+  }
 }
